@@ -15,7 +15,8 @@ const attr = (el: Element | null, name: string) => el?.closest(`[${name}]`)?.get
 let rep: Rep = 'white';
 let S: State, L: Layout;
 let cur = START_KEY, stack: string[] = [], fwd: string[] = [], zoom = 1;
-let pending: { key: string; n: number } | null = null;
+let pending: { keys: string[]; n: number } | null = null;
+let marked = new Set<string>();
 let promo: { from: string; to: string; color: string } | null = null;
 let settingShapes = false;
 const flips: Record<Rep, boolean> = { white: false, black: false };
@@ -36,6 +37,7 @@ async function load() {
   S = await api('/api/state/' + rep);
   if (!S.positions[cur]) cur = S.root;
   stack = stack.filter(k => S.positions[k]); fwd = fwd.filter(k => S.positions[k]);
+  marked = new Set([...marked].filter(k => S.positions[k]));
   L = layout(S);
 }
 
@@ -147,21 +149,21 @@ function drawPending() {
 }
 $('#pend').onclick = e => {
   const id = (e.target as HTMLElement).id;
-  if (id === 'yes' && pending) void doDelete(pending.key);
+  if (id === 'yes' && pending) void doDelete(pending.keys);
   else if (id === 'no') { pending = null; drawPending(); }
 };
-async function askDelete(key: string) {
+async function askDelete(keys: string[]) {
   try {
-    const r = await api('/api/delete', { rep, key, dry: true });
-    if (r.removed < 2) await doDelete(key); else { pending = { key, n: r.removed }; drawPending(); }
+    const r = await api('/api/delete', { rep, keys, dry: true });
+    if (r.removed < 2) await doDelete(keys); else { pending = { keys, n: r.removed }; drawPending(); }
   } catch (e) { toast((e as Error).message); }
 }
-async function doDelete(key: string) {
-  // Fällt die aktuelle Stellung weg, zum Vorgänger des gelöschten Zugs springen (sonst nächster erhaltener Vorfahre)
-  const cand = [cur, prevOf(key)];
+async function doDelete(keys: string[]) {
+  // Fällt die aktuelle Stellung weg, zum Vorgänger eines gelöschten Zugs springen (sonst nächster erhaltener Vorfahre)
+  const cand = [cur, ...keys.map(prevOf)];
   for (let x = L.parent[cur]; x !== undefined; x = L.parent[x]) cand.push(x);
   try {
-    await api('/api/delete', { rep, key }); pending = null; fwd = [];
+    await api('/api/delete', { rep, keys }); pending = null; fwd = []; marked.clear();
     const keep = cur; await load();
     if (!S.positions[keep]) cur = cand.find(k => k !== undefined && S.positions[k]) ?? S.root;
     refresh();
@@ -172,7 +174,7 @@ async function doDelete(key: string) {
 const G = $('#graph');
 function drawGraph() {
   hidePv();
-  G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys);
+  G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys, marked);
   const p = L.pos[cur];
   G.scrollTo(p ? { left: Math.max(0, (p.x + 62) * zoom - G.clientWidth / 2), top: Math.max(0, (p.y + 15) * zoom - G.clientHeight / 2), behavior: 'smooth' } : { left: 0, top: 0, behavior: 'smooth' });
 }
@@ -194,7 +196,18 @@ G.addEventListener('pointermove', e => {
 });
 const endPan = () => { pan = null; G.classList.remove('pan'); };
 G.addEventListener('pointerup', endPan); G.addEventListener('pointercancel', endPan);
-G.addEventListener('click', e => { if (moved) { moved = false; return; } const k = attr(e.target as Element, 'data-k'); if (k) go(k); });
+// Strg/Cmd+Klick markiert, normaler Klick navigiert und hebt die Markierung auf
+G.addEventListener('click', e => {
+  if (moved) { moved = false; return; }
+  const k = attr(e.target as Element, 'data-k'); if (!k) return;
+  if (e.ctrlKey || e.metaKey) { if (!marked.delete(k)) marked.add(k); } else marked.clear();
+  showMarks(); if (!e.ctrlKey && !e.metaKey) go(k);
+});
+function showMarks() {
+  G.querySelectorAll('.n').forEach(n => n.classList.toggle('sel', marked.has(n.getAttribute('data-k')!)));
+  $('#info').textContent = `${Object.keys(S.positions).length - 1} Stellungen` + (marked.size ? ` · ${marked.size} markiert` : '');
+}
+function clearMarks() { if (marked.size) { marked.clear(); showMarks(); } }
 
 // Vorschau beim Darüberfahren
 const PV = document.createElement('div'); PV.className = 'pv'; PV.hidden = true; document.body.appendChild(PV);
@@ -212,15 +225,18 @@ G.addEventListener('mousemove', e => {
 G.addEventListener('mouseleave', hidePv);
 
 // Rechtsklick-Menü
-const CM = document.createElement('div'); CM.id = 'cm'; CM.hidden = true; CM.innerHTML = '<button>Löschen</button>'; document.body.appendChild(CM);
-let cmKey: string | null = null;
+// Auf einem markierten Knoten wirkt es auf alle markierten, sonst nur auf diesen
+const CM = document.createElement('div'); CM.id = 'cm'; CM.hidden = true; document.body.appendChild(CM);
+let cmKeys: string[] = [];
 G.addEventListener('contextmenu', e => {
   e.preventDefault();
   const k = attr(e.target as Element, 'data-k');
   if (!k) { CM.hidden = true; return; }
-  cmKey = k; CM.style.left = e.clientX + 'px'; CM.style.top = e.clientY + 'px'; CM.hidden = false;
+  cmKeys = marked.has(k) ? [...marked] : [k];
+  CM.innerHTML = `<button>${cmKeys.length > 1 ? cmKeys.length + ' Züge löschen' : 'Löschen'}</button>`;
+  CM.style.left = e.clientX + 'px'; CM.style.top = e.clientY + 'px'; CM.hidden = false;
 });
-CM.onclick = () => { CM.hidden = true; if (cmKey) void askDelete(cmKey); };
+CM.onclick = () => { CM.hidden = true; if (cmKeys.length) void askDelete(cmKeys); };
 document.addEventListener('pointerdown', e => { if (!CM.contains(e.target as Node)) CM.hidden = true; }, true);
 
 // ---------- Gesamtdarstellung
@@ -228,12 +244,12 @@ function refresh() {
   syncBoard(); drawPromo(); drawPath(); drawGraph(); drawPending();
   $('#tw').className = rep === 'white' ? 'on' : ''; $('#tb').className = rep === 'black' ? 'on' : '';
   ($('#lic') as HTMLAnchorElement).href = lichessUrl();
-  $('#info').textContent = `${Object.keys(S.positions).length - 1} Stellungen`;
+  showMarks();
   const atRoot = cur === S.root, nx = !!nextOf(cur);
   ($('#n0') as HTMLButtonElement).disabled = ($('#n1') as HTMLButtonElement).disabled = atRoot;
   ($('#n2') as HTMLButtonElement).disabled = ($('#n3') as HTMLButtonElement).disabled = !nx;
 }
-async function switchRep(r: Rep) { if (r === rep) { navStart(); return; } rep = r; cur = START_KEY; stack = []; fwd = []; pending = null; await load(); await loadGapJob().catch(() => {}); refresh(); }
+async function switchRep(r: Rep) { if (r === rep) { navStart(); return; } rep = r; cur = START_KEY; stack = []; fwd = []; pending = null; marked.clear(); await load(); await loadGapJob().catch(() => {}); refresh(); }
 function flipBoard() { flips[rep] = !flips[rep]; try { localStorage.setItem('cbflip', JSON.stringify(flips)); } catch { /* ignorieren */ } refresh(); }
 
 $('#tw').onclick = () => void switchRep('white'); $('#tb').onclick = () => void switchRep('black');
@@ -242,7 +258,7 @@ $('#fl').onclick = flipBoard;
 addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName) || ($('#dlg') as HTMLDialogElement).open) return;
   const f: Record<string, () => void> = { f: flipBoard, F: flipBoard, ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
-  if (f[e.key]) { e.preventDefault(); f[e.key](); } else if (e.key === 'Escape') CM.hidden = true;
+  if (f[e.key]) { e.preventDefault(); f[e.key](); } else if (e.key === 'Escape') { CM.hidden = true; clearMarks(); }
 });
 addEventListener('resize', () => cg.redrawAll());
 

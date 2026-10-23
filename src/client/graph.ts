@@ -58,7 +58,7 @@ export function sanHtml(side: 'w' | 'b', san: string): string {
   return m ? `<img src="pieces/${side}${m[1]}.svg" alt="${m[1]}">${m[2]}` : san;
 }
 
-export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gaps?: Set<string>): string {
+export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gaps?: Set<string>, marked?: Set<string>): string {
   if (!Object.keys(L.pos).length) return '<div class="empty">Noch keine Züge. Ziehe eine Figur auf dem Brett, um den ersten Zug einzutragen.</div>';
   const pathEdges = new Set<string>(), pathNodes = new Set<string>();
   for (let x = cur; L.parent[x] !== undefined; x = L.parent[x]) { pathEdges.add(L.parent[x] + '>' + x); pathNodes.add(x); }
@@ -73,7 +73,7 @@ export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gap
   }
   let nodes = '';
   for (const [k, p] of Object.entries(L.pos)) {
-    const cls = `n ${L.side[k]}${k === cur ? ' cur' : pathNodes.has(k) ? ' onpath' : ''}`;
+    const cls = `n ${L.side[k]}${k === cur ? ' cur' : pathNodes.has(k) ? ' onpath' : ''}${marked?.has(k) ? ' sel' : ''}`;
     const inc = L.incoming[k] ?? 0;
     nodes += `<g class="${cls}" data-k="${k}"><rect x="${p.x}" y="${p.y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>` +
       `<foreignObject x="${p.x + 9}" y="${p.y + 2}" width="${NODE_W - 16}" height="${NODE_H - 4}"><div class="lab"><span class="mn">${L.num[k]}</span>${sanHtml(L.side[k], L.san[k])}</div></foreignObject>` +
