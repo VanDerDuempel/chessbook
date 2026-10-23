@@ -195,3 +195,21 @@ dialog .drop textarea{display:block;height:140px;border:0;border-radius:0;backgr
 /* Ränge stehen links (a- bzw. h-Linie): jeweils die Gegenfarbe des Feldes */
 .cg-wrap.orientation-white .ranks :nth-child(even),.cg-wrap.orientation-white .files :nth-child(even),.cg-wrap.orientation-black .ranks :nth-child(odd),.cg-wrap.orientation-black .files :nth-child(odd){color:#5b3a1d}
 .cg-wrap.orientation-white .ranks :nth-child(odd),.cg-wrap.orientation-white .files :nth-child(odd),.cg-wrap.orientation-black .ranks :nth-child(even),.cg-wrap.orientation-black .files :nth-child(even){color:#f3e3c3}
+/* Volle Fensterhöhe: Brettbreite richtet sich nach der Höhe, der Graph füllt die Zeile */
+@media(min-width:861px){
+  .top{grid-template-columns:minmax(0,clamp(320px,calc(100dvh - 310px),720px)) minmax(280px,1fr);min-height:calc(100dvh - 110px)}
+  .wrap{max-width:none}
+  #gwrap{min-height:0}
+}
+#graph svg{margin:0 auto}
+/* Zoomleiste im Graphen */
+.zbar{position:absolute;right:12px;bottom:12px;z-index:2;display:flex;gap:2px;padding:3px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;box-shadow:var(--shadow)}
+.zbar button{width:30px;height:30px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--muted)}
+.zbar button:hover:not(:disabled){background:var(--panel2);color:var(--text)}
+/* Knoten: Punkt in der Farbe der ziehenden Seite, Lücken mit orangem Rahmen */
+.sd{stroke:var(--muted);stroke-width:1}.n.w .sd{fill:#f5f5f5}.n.b .sd{fill:#2b2d31}
+.n.gp rect{stroke:#e08a1e;stroke-width:1.5}
+.n.cur.gp rect{stroke:var(--accent)}
+.badge{stroke:var(--panel);stroke-width:2}
+.dh h2{align-self:center}
+.sec:empty{margin:16px 0 0}

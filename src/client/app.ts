@@ -5,7 +5,7 @@ import type { Key } from 'chessground/types';
 import { chessgroundDests } from 'chessops/compat';
 import { parseSquare } from 'chessops/util';
 import { fromFen, START_KEY } from '../core';
-import { layout, renderGraph, miniBoard, sanHtml, keysInRect, type Layout } from './graph';
+import { layout, renderGraph, miniBoard, sanHtml, keysInRect, NODE_W, NODE_H, type Layout } from './graph';
 import type { State, Shape, Rep } from '../db';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
@@ -128,7 +128,7 @@ $('#promo').onclick = e => {
 function drawPath() {
   const el = $('#path'), p = pathTo(cur);
   el.classList.toggle('start', !p.length);
-  if (!p.length) { el.innerHTML = '<span class="mut">Startstellung · zieh eine Figur, um eine Variante anzulegen</span>'; return; }
+  if (!p.length) { el.innerHTML = '<span class="mut">Startstellung</span>'; return; }
   const mv = (k: string, san: string, side: 'w' | 'b') => `<span class="pm${k === cur ? ' on' : ''}" data-k="${k}">${sanHtml(side, san)}</span>`;
   let h = '';
   for (let i = 0; i < p.length; i += 2) h += `<span class="pr"><span class="mn">${i / 2 + 1}.</span>${mv(p[i][0], p[i][1], 'w')}${p[i + 1] ? mv(p[i + 1][0], p[i + 1][1], 'b') : ''}</span>`;
@@ -176,9 +176,19 @@ const G = $('#graph');
 function drawGraph() {
   hidePv();
   G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys, marked);
-  const p = L.pos[cur];
-  G.scrollTo(p ? { left: Math.max(0, (p.x + 62) * zoom - G.clientWidth / 2), top: Math.max(0, (p.y + 15) * zoom - G.clientHeight / 2), behavior: 'smooth' } : { left: 0, top: 0, behavior: 'smooth' });
+  focusCur();
 }
+// Aktuelle Stellung mittig zeigen; in der Startstellung den ersten Zug der Hauptvariante oben
+function focusCur(behavior: ScrollBehavior = 'smooth') {
+  const p = L.pos[cur], q = p ?? L.pos[S.moves[S.root]?.[0]?.to ?? ''];
+  if (!q) { G.scrollTo({ left: 0, top: 0, behavior }); return; }
+  G.scrollTo({ left: Math.max(0, (q.x + NODE_W / 2) * zoom - G.clientWidth / 2), top: Math.max(0, (q.y + NODE_H / 2) * zoom - (p ? G.clientHeight / 2 : 40)), behavior });
+}
+const zmid = (f: number) => zoomTo(zoom * f, G.clientWidth / 2, G.clientHeight / 2);
+$('#zi').onclick = () => zmid(1.25);
+$('#zo').onclick = () => zmid(0.8);
+$('#zf').onclick = () => { zoomTo(Math.min(1, (G.clientWidth - 24) / L.width, (G.clientHeight - 24) / L.height), 0, 0); G.scrollTo({ left: 0, top: 0 }); };
+$('#zc').onclick = () => focusCur();
 function zoomTo(z: number, mx: number, my: number) {
   const sv = G.querySelector('svg'); if (!sv) return;
   z = Math.min(2.5, Math.max(0.25, z));
@@ -320,9 +330,8 @@ function renderTarget(reset = false) {
   if (reset || j !== tgtJson) { tgtJson = j; tgt = j ? 'both' : rep; }
   const opts: Target[] = j ? ['white', 'black', 'both'] : ['white', 'black'];
   $('#itgt').innerHTML = opts.map(v => `<button data-t="${v}"${v === tgt ? ' class="on"' : ''}>${TNAME[v]}</button>`).join('');
-  const f = $('#ifmt'); f.hidden = !has; f.textContent = j ? 'JSON erkannt' : 'PGN erkannt';
+  const f = $('#ifmt'); f.hidden = !has; f.textContent = j ? 'JSON' : 'PGN';
   ($('#imp') as HTMLButtonElement).disabled = !has;
-  $('#dfoot').textContent = has ? `Ziel: ${tgt === 'both' ? 'Weiß und Schwarz' : TNAME[tgt]}` : 'Erst Text einfügen oder eine Datei wählen.';
 }
 async function useFile(f: File | undefined) { if (!f) return; txt.value = await f.text(); $('#fname').textContent = f.name; $('#dm').innerHTML = ''; renderTarget(); }
 $('#itgt').onclick = e => { const v = attr(e.target as Element, 'data-t') as Target | null; if (v) { tgt = v; renderTarget(); } };
@@ -345,13 +354,11 @@ $('#imp').onclick = async () => {
     const r = isJson()
       ? await api('/api/import-json', { data: JSON.parse(t), reps: to === 'both' ? ['white', 'black'] : [to] })
       : await api('/api/import-pgn', { rep: to, text: t });
-    const other = to !== 'both' && to !== rep;
-    out.innerHTML = `<div class="okbox"><div class="ph"><i>✓</i><div><b>Import abgeschlossen (${TNAME[to]})</b>` +
-      (other ? `<span class="mut">Geöffnet ist weiter ${TNAME[rep]}, zum Ansehen oben auf ${TNAME[to]} umschalten.</span>` : '') + `</div></div>
-      <div class="kpis">${kpi(r.positions, 'neue Stellungen')}${kpi(r.moves, 'neue Züge')}${kpi(r.skipped, 'übersprungen')}${kpi(r.shapes, 'Pfeile und Kreise')}</div></div>`;
+    out.innerHTML = `<div class="okbox"><div class="ph"><i>✓</i><div><b>Importiert: ${to === 'both' ? 'Weiß + Schwarz' : TNAME[to]}</b></div></div>
+      <div class="kpis">${kpi(r.positions, 'Stellungen')}${kpi(r.moves, 'Züge')}${kpi(r.skipped, 'übersprungen')}${kpi(r.shapes, 'Pfeile/Kreise')}</div></div>`;
     out.scrollIntoView({ block: 'nearest' });
     await load(); refresh();
-  } catch (e) { out.innerHTML = `<div class="note err">Fehler: ${e instanceof SyntaxError ? 'Das JSON ist unvollständig oder fehlerhaft.' : esc((e as Error).message)}</div>`; }
+  } catch (e) { out.innerHTML = `<div class="note err">Fehler: ${e instanceof SyntaxError ? 'JSON fehlerhaft' : esc((e as Error).message)}</div>`; }
 };
 
 // ---------- Lücken-Erkennung (Vergleich mit den häufigsten Zügen auf Lichess)
@@ -374,69 +381,63 @@ function updateGapKeys() {
 }
 async function loadGapJob() { gapJobs[rep] = await api('/api/gaps/' + rep); updateGapKeys(); }
 const SOURCES: [string, string, string][] = [
-  ['masters', 'Masters', 'Partien von Großmeistern aus der Masters-Datenbank von Lichess.'],
-  ['lichess', 'Lichess', 'Partien aller Spieler auf Lichess.'],
-  ['player', 'Spieler', 'Partien eines Lichess-Spielers, etwa zur Vorbereitung auf einen Gegner. Beim ersten Mal liest Lichess die Partien ein, das dauert einige Minuten.'],
+  ['masters', 'Masters', 'Partien von Großmeistern'],
+  ['lichess', 'Lichess', 'Alle Partien auf Lichess'],
+  ['player', 'Spieler', 'Partien eines Lichess-Spielers'],
 ];
 function renderGapCfg() {
   const c = gapCfg; if (!c) return;
-  const seg = SOURCES.map(([v, n]) => `<button data-src="${v}"${v === c.source ? ' class="on"' : ''}>${n}</button>`).join('');
-  const [, sn, desc] = SOURCES.find(([v]) => v === c.source) ?? ['', '', ''];
+  const seg = SOURCES.map(([v, n, d]) => `<button data-src="${v}" title="${d}"${v === c.source ? ' class="on"' : ''}>${n}</button>`).join('');
   const t = c.thresholds?.[c.source] ?? { minShare: 0.05, minGames: 30 };
-  const opp = rep === 'white' ? 'mit Schwarz' : 'mit Weiß';
+  const opp = rep === 'white' ? 'Schwarz' : 'Weiß';
   const sel = (v: string, n: string) => `<option value="${v}"${v === c.playerColor ? ' selected' : ''}>${n}</option>`;
-  $('#ghead').innerHTML = `<h2>Lücken-Erkennung: ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>
-    <p class="mut">Zeigt Gegnerzüge, die in deinem Repertoire fehlen, die wahrscheinlichsten zuerst.</p>`;
+  $('#ghead').innerHTML = `<h2>Lücken · ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>`;
   $('#gcfg').innerHTML =
     (c.tokenSet && !editToken
-      ? `<div class="stat"><i></i>Lichess-Zugang eingerichtet<button class="link" data-act="chtok">Ändern</button></div>`
-      : `<label class="fld"><span class="lb">Lichess-Zugangsschlüssel</span><span class="inl"><input id="gtoken" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
-         <p class="hint">Kostenlos auf <a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">lichess.org/account/oauth/token</a> erstellen, ohne zusätzliche Rechte. Er bleibt auf deinem Rechner in <code>data/config.json</code>.</p>`) +
-    `<div class="sec">Quelle</div><div class="seg" id="gsrc">${seg}</div><p class="hint">${desc}</p>` +
+      ? `<div class="stat"><i></i>Lichess verbunden<button class="link" data-act="chtok">Ändern</button></div>`
+      : `<label class="fld"><span class="lb">Lichess-Token</span><span class="inl"><input id="gtoken" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
+         <p class="hint"><a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">Token erstellen ↗</a></p>`) +
+    `<div class="sec">Quelle</div><div class="seg" id="gsrc">${seg}</div>` +
     (c.source === 'player'
-      ? `<div class="grid2"><label class="fld"><span class="lb">Lichess-Name</span><input id="gplayer" type="text" value="${esc(c.player)}" placeholder="Name des Spielers" maxlength="30" autocomplete="off"></label>
-         <label class="fld"><span class="lb">Partien des Spielers</span><select id="gcolor">${sel('auto', 'Seite des Gegners (' + opp + ')')}${sel('white', 'mit Weiß')}${sel('black', 'mit Schwarz')}</select></label></div>`
+      ? `<div class="grid2"><label class="fld"><span class="lb">Spieler</span><input id="gplayer" type="text" value="${esc(c.player)}" placeholder="Lichess-Name" maxlength="30" autocomplete="off"></label>
+         <label class="fld"><span class="lb">Farbe</span><select id="gcolor">${sel('auto', 'Gegnerseite (' + opp + ')')}${sel('white', 'Weiß')}${sel('black', 'Schwarz')}</select></label></div>`
       : '') +
-    `<div class="sec">Schwellen <span>für ${sn}</span></div>
-     <div class="grid2"><label class="fld"><span class="lb">Mindestanteil</span><span class="unit"><input id="gshare" type="number" min="1" max="50" value="${Math.round(t.minShare * 100)}"><i>%</i></span></label>
-       <label class="fld"><span class="lb">Mindestanzahl Partien</span><input id="ggames" type="number" min="1" value="${t.minGames}"></label></div>`;
+    `<div class="sec">Schwellen</div>
+     <div class="grid2"><label class="fld"><span class="lb">Min. Anteil</span><span class="unit"><input id="gshare" type="number" min="1" max="50" value="${Math.round(t.minShare * 100)}"><i>%</i></span></label>
+       <label class="fld"><span class="lb">Min. Partien</span><input id="ggames" type="number" min="1" value="${t.minGames}"></label></div>`;
 }
 function renderGapRes() {
-  const j = gapJobs[rep]; let h = '', foot = '';
+  const j = gapJobs[rep]; let h = '';
   const run = j?.state === 'running', scan = $('#gscan') as HTMLButtonElement;
   scan.disabled = !gapCfg?.tokenSet || run; scan.classList.toggle('busy', run);
   scan.innerHTML = run ? '<span class="spin s"></span>Suche läuft …' : j && j.state !== 'none' ? 'Erneut suchen' : 'Suchen';
-  if (!gapCfg?.tokenSet) foot = 'Erst den Zugangsschlüssel speichern.';
-  const prog = (title: string, sub: string, k: string) => `<div class="sec">Fortschritt</div><div class="prog"><div class="ph"><span class="spin"></span><div><b>${title}</b><span class="mut">${sub}</span></div></div><div class="kpis">${k}</div></div>`;
-  if (!j || j.state === 'none') h = '<div class="sec">Ergebnis</div><div class="note">Noch keine Suche in diesem Repertoire.</div>';
+  const prog = (title: string, k: string) => `<div class="sec"></div><div class="prog"><div class="ph"><span class="spin"></span><b>${title}</b></div><div class="kpis">${k}</div></div>`;
+  if (!j || j.state === 'none') h = '';
   else if (run && j.indexing) {
     const { queue, games } = j.indexing;
-    h = prog(`Lichess liest die Partien von ${esc(j.player)} ein`, 'Beim ersten Mal dauert das einige Minuten, danach geht es schnell.',
-      (queue ? kpi(queue, 'Platz in der Warteschlange') : '') + kpi(games, 'Partien eingelesen'));
-  } else if (run) h = prog('Stellungen werden abgefragt', 'Wegen der Pausen zwischen den Anfragen dauert die erste Suche einige Minuten.',
-    kpi(j.queried, 'Stellungen abgefragt') + kpi(j.open, 'warten noch'));
-  else if (j.state === 'error') h = `<div class="sec">Ergebnis</div><div class="note err">${esc(j.message)}</div>`;
+    h = prog(`Lichess liest ${esc(j.player)} ein`, (queue ? kpi(queue, 'in der Warteschlange') : '') + kpi(games, 'Partien'));
+  } else if (run) h = prog('Suche läuft', kpi(j.queried, 'abgefragt') + kpi(j.open, 'offen'));
+  else if (j.state === 'error') h = `<div class="sec"></div><div class="note err">${esc(j.message)}</div>`;
   else {
-    foot = 'Quelle: ' + (j.source === 'masters' ? 'Masters' : j.source === 'player' ? `${esc(j.player)} (${j.color === 'white' ? 'mit Weiß' : 'mit Schwarz'})` : 'Lichess');
-    h = `<div class="sec">Ergebnis</div><div class="kpis">${kpi(j.gaps.length, j.gaps.length === 1 ? 'fehlender Gegnerzug' : 'fehlende Gegnerzüge')}${kpi(j.own.length, j.own.length === 1 ? 'Stellung ohne eigenen Zug' : 'Stellungen ohne eigenen Zug')}</div>`;
+    h = `<div class="sec"></div><div class="kpis">${kpi(j.gaps.length, 'Gegnerzüge fehlen')}${kpi(j.own.length, 'eigene Züge fehlen')}</div>`;
     const go = (k: string) => `<button class="sm" data-act="go" data-k="${k}">Hingehen</button>`;
     if (j.gaps.length) {
-      h += `<div class="sec">Fehlende Gegnerzüge${j.gaps.length > 100 ? ' <span>die 100 wichtigsten</span>' : ''}</div><div class="list">`;
+      h += `<div class="sec">Gegnerzüge${j.gaps.length > 100 ? ' <span>Top 100</span>' : ''}</div><div class="list">`;
       for (const g of j.gaps.slice(0, 100)) {
         const ply = pathTo(g.key).length + 1, white = ply % 2 === 1;
         h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(g.key))}</div><div class="gm"><span class="mv">${Math.ceil(ply / 2)}${white ? '.' : '...'}${sanHtml(white ? 'w' : 'b', g.san)}</span>
-          <span class="sh" title="Anteil an den Partien"><i style="width:${Math.min(100, g.share * 100).toFixed(1)}%"></i></span><span class="gs">${pct(g.share)} von ${de(g.games)} · erreichbar zu ${pct(g.reach)}</span></div></div>
+          <span class="sh" title="Anteil an den Partien"><i style="width:${Math.min(100, g.share * 100).toFixed(1)}%"></i></span><span class="gs">${pct(g.share)} · ${de(g.games)} Partien · erreichbar ${pct(g.reach)}</span></div></div>
           <div class="ga">${go(g.key)}<button class="sm soft" data-act="add" data-k="${g.key}" data-san="${esc(g.san)}">Eintragen</button></div></div>`;
       }
       h += '</div>';
     }
     if (j.own.length) {
-      h += `<div class="sec">Hier fehlt dein Zug</div><div class="list">`;
-      for (const o of j.own.slice(0, 100)) h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(o.key))}</div><div class="gm"><span class="gs">erreichbar zu ${pct(o.reach)}</span></div></div><div class="ga">${go(o.key)}</div></div>`;
+      h += `<div class="sec">Eigene Züge</div><div class="list">`;
+      for (const o of j.own.slice(0, 100)) h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(o.key))}</div><div class="gm"><span class="gs">erreichbar ${pct(o.reach)}</span></div></div><div class="ga">${go(o.key)}</div></div>`;
       h += '</div>';
     }
   }
-  $('#gres').innerHTML = h; $('#gfoot').innerHTML = foot;
+  $('#gres').innerHTML = h;
 }
 function pollGaps() {
   clearTimeout(gapTimer);
