@@ -311,32 +311,46 @@ type Target = Rep | 'both';
 const TNAME: Record<Target, string> = { white: 'Weiß', black: 'Schwarz', both: 'Beide' };
 let tgt: Target = 'white', tgtJson = false;
 const isJson = () => txt.value.trim().startsWith('{');
+const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const de = (x: number) => x.toLocaleString('de-DE');
+const kpi = (v: string | number, l: string) => `<div><b>${typeof v === 'number' ? de(v) : v}</b><span>${l}</span></div>`;
 function renderTarget(reset = false) {
-  const j = isJson();
+  const j = isJson(), has = !!txt.value.trim();
   if (reset || j !== tgtJson) { tgtJson = j; tgt = j ? 'both' : rep; }
   const opts: Target[] = j ? ['white', 'black', 'both'] : ['white', 'black'];
   $('#itgt').innerHTML = opts.map(v => `<button data-t="${v}"${v === tgt ? ' class="on"' : ''}>${TNAME[v]}</button>`).join('');
+  const f = $('#ifmt'); f.hidden = !has; f.textContent = j ? 'JSON erkannt' : 'PGN erkannt';
+  ($('#imp') as HTMLButtonElement).disabled = !has;
+  $('#dfoot').textContent = has ? `Ziel: ${tgt === 'both' ? 'Weiß und Schwarz' : TNAME[tgt]}` : 'Erst Text einfügen oder eine Datei wählen.';
 }
+async function useFile(f: File | undefined) { if (!f) return; txt.value = await f.text(); $('#fname').textContent = f.name; $('#dm').innerHTML = ''; renderTarget(); }
 $('#itgt').onclick = e => { const v = attr(e.target as Element, 'data-t') as Target | null; if (v) { tgt = v; renderTarget(); } };
-txt.oninput = () => renderTarget();
-$('#dat').onclick = () => { $('#dm').textContent = ''; renderTarget(true); dlg.showModal(); };
+txt.oninput = () => { $('#fname').textContent = ''; renderTarget(); };
+$('#dat').onclick = () => { $('#dm').innerHTML = ''; renderTarget(true); dlg.showModal(); };
 $('#dclose').onclick = () => dlg.close();
 $('#xjson').onclick = async () => download('chessbook-export.json', JSON.stringify(await api('/api/export')), 'application/json');
 $('#xw').onclick = async () => download('chessbook-weiss.pgn', await (await fetch('/api/export-pgn/white')).text(), 'text/plain');
 $('#xb').onclick = async () => download('chessbook-schwarz.pgn', await (await fetch('/api/export-pgn/black')).text(), 'text/plain');
-$('#file').onchange = async e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { txt.value = await f.text(); renderTarget(); } };
+$('#fpick').onclick = () => $('#file').click();
+$('#file').onchange = e => { const i = e.target as HTMLInputElement; useFile(i.files?.[0]); i.value = ''; };
+const drop = $('#drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', e => { if (!drop.contains(e.relatedTarget as Node)) drop.classList.remove('over'); });
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); useFile(e.dataTransfer?.files[0]); });
 $('#imp').onclick = async () => {
   const t = txt.value.trim(), out = $('#dm'), to = tgt;
-  if (!t) { out.textContent = 'Bitte Text einfügen oder eine Datei wählen.'; return; }
+  if (!t) return;
   try {
     const r = isJson()
       ? await api('/api/import-json', { data: JSON.parse(t), reps: to === 'both' ? ['white', 'black'] : [to] })
       : await api('/api/import-pgn', { rep: to, text: t });
     const other = to !== 'both' && to !== rep;
-    out.textContent = `Fertig (${TNAME[to]}). Neue Stellungen: ${r.positions}, neue Züge: ${r.moves}, übersprungen: ${r.skipped}, Pfeile und Kreise: ${r.shapes}.` +
-      (other ? ` Geöffnet ist weiter ${TNAME[rep]}, zum Ansehen oben auf ${TNAME[to]} umschalten.` : '');
+    out.innerHTML = `<div class="okbox"><div class="ph"><i>✓</i><div><b>Import abgeschlossen (${TNAME[to]})</b>` +
+      (other ? `<span class="mut">Geöffnet ist weiter ${TNAME[rep]}, zum Ansehen oben auf ${TNAME[to]} umschalten.</span>` : '') + `</div></div>
+      <div class="kpis">${kpi(r.positions, 'neue Stellungen')}${kpi(r.moves, 'neue Züge')}${kpi(r.skipped, 'übersprungen')}${kpi(r.shapes, 'Pfeile und Kreise')}</div></div>`;
+    out.scrollIntoView({ block: 'nearest' });
     await load(); refresh();
-  } catch (e) { out.textContent = 'Fehler: ' + (e as Error).message; }
+  } catch (e) { out.innerHTML = `<div class="note err">Fehler: ${e instanceof SyntaxError ? 'Das JSON ist unvollständig oder fehlerhaft.' : esc((e as Error).message)}</div>`; }
 };
 
 // ---------- Lücken-Erkennung (Vergleich mit den häufigsten Zügen auf Lichess)
@@ -346,7 +360,6 @@ interface GapCfg { tokenSet: boolean; source: 'masters' | 'lichess' | 'player'; 
 const gapJobs: Record<Rep, GapJob | null> = { white: null, black: null };
 let gapKeys = new Set<string>(), gapCfg: GapCfg | null = null, gapTimer = 0, editToken = false;
 const gdlg = $<HTMLDialogElement>('#gdlg');
-const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const pct = (x: number) => (x * 100).toLocaleString('de-DE', { maximumFractionDigits: x < 0.1 ? 1 : 0 }) + ' %';
 function pathText(k: string) {
   const p = pathTo(k).map(([, san], i) => (i % 2 ? san : `${i / 2 + 1}.${san}`));
@@ -360,9 +373,9 @@ function updateGapKeys() {
 }
 async function loadGapJob() { gapJobs[rep] = await api('/api/gaps/' + rep); updateGapKeys(); }
 const SOURCES: [string, string, string][] = [
-  ['masters', 'Masters', 'Partien von Großmeistern (Masters-Datenbank von Lichess).'],
+  ['masters', 'Masters', 'Partien von Großmeistern aus der Masters-Datenbank von Lichess.'],
   ['lichess', 'Lichess', 'Partien aller Spieler auf Lichess.'],
-  ['player', 'Spieler', 'Partien eines bestimmten Lichess-Spielers, zum Beispiel zur Vorbereitung auf einen Gegner. Beim ersten Mal muss Lichess die Partien des Spielers erst einlesen, das kann einige Minuten dauern (bei vielen Partien 5–10 Minuten), danach geht es schnell.'],
+  ['player', 'Spieler', 'Partien eines Lichess-Spielers, etwa zur Vorbereitung auf einen Gegner. Beim ersten Mal liest Lichess die Partien ein, das dauert einige Minuten.'],
 ];
 function renderGapCfg() {
   const c = gapCfg; if (!c) return;
@@ -371,46 +384,58 @@ function renderGapCfg() {
   const t = c.thresholds?.[c.source] ?? { minShare: 0.05, minGames: 30 };
   const opp = rep === 'white' ? 'mit Schwarz' : 'mit Weiß';
   const sel = (v: string, n: string) => `<option value="${v}"${v === c.playerColor ? ' selected' : ''}>${n}</option>`;
-  $('#gcfg').innerHTML = `<h2>Lücken-Erkennung: ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>
-    <p class="mut">Vergleicht dein Repertoire mit den häufigsten Zügen der gewählten Quelle und zeigt, welche Gegnerzüge dir noch fehlen. Die Ergebnisse sind nach der Wahrscheinlichkeit sortiert, mit der du die Stellung erreichst.</p>` +
+  $('#ghead').innerHTML = `<h2>Lücken-Erkennung: ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>
+    <p class="mut">Zeigt Gegnerzüge, die in deinem Repertoire fehlen, die wahrscheinlichsten zuerst.</p>`;
+  $('#gcfg').innerHTML =
     (c.tokenSet && !editToken
-      ? `<p>Zugangsschlüssel gespeichert. <button data-act="chtok">Ändern</button></p>`
-      : `<div class="row"><input id="gtoken" type="password" placeholder="Lichess-Zugangsschlüssel" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></div>
-         <p class="mut">Lichess verlangt für diese Daten einen kostenlosen Zugangsschlüssel (Token): <a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">lichess.org/account/oauth/token</a> öffnen, einen neuen Token ohne zusätzliche Rechte erstellen und hier einfügen. Er wird nur auf deinem Rechner in <code>data/config.json</code> gespeichert.</p>`) +
-    `<div class="row"><div class="seg" id="gsrc">${seg}</div></div><p class="mut">${desc}</p>` +
+      ? `<div class="stat"><i></i>Lichess-Zugang eingerichtet<button class="link" data-act="chtok">Ändern</button></div>`
+      : `<label class="fld"><span class="lb">Lichess-Zugangsschlüssel</span><span class="inl"><input id="gtoken" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
+         <p class="hint">Kostenlos auf <a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">lichess.org/account/oauth/token</a> erstellen, ohne zusätzliche Rechte. Er bleibt auf deinem Rechner in <code>data/config.json</code>.</p>`) +
+    `<div class="sec">Quelle</div><div class="seg" id="gsrc">${seg}</div><p class="hint">${desc}</p>` +
     (c.source === 'player'
-      ? `<div class="row"><label>Name <input id="gplayer" type="text" value="${esc(c.player)}" placeholder="Lichess-Name" maxlength="30" autocomplete="off"></label>
-         <label>Partien <select id="gcolor">${sel('auto', 'Seite des Gegners (' + opp + ')')}${sel('white', 'mit Weiß')}${sel('black', 'mit Schwarz')}</select></label></div>`
+      ? `<div class="grid2"><label class="fld"><span class="lb">Lichess-Name</span><input id="gplayer" type="text" value="${esc(c.player)}" placeholder="Name des Spielers" maxlength="30" autocomplete="off"></label>
+         <label class="fld"><span class="lb">Partien des Spielers</span><select id="gcolor">${sel('auto', 'Seite des Gegners (' + opp + ')')}${sel('white', 'mit Weiß')}${sel('black', 'mit Schwarz')}</select></label></div>`
       : '') +
-    `<div class="row"><label>Mindestanteil <input id="gshare" type="number" min="1" max="50" value="${Math.round(t.minShare * 100)}"> %</label>
-       <label>Mindestanzahl Partien <input id="ggames" type="number" min="1" value="${t.minGames}"></label><span class="mut">gilt für ${sn}</span></div>
-     <div class="row"><button id="gscan" class="primary"${c.tokenSet ? '' : ' disabled'}>Suchen</button></div>`;
+    `<div class="sec">Schwellen <span>für ${sn}</span></div>
+     <div class="grid2"><label class="fld"><span class="lb">Mindestanteil</span><span class="unit"><input id="gshare" type="number" min="1" max="50" value="${Math.round(t.minShare * 100)}"><i>%</i></span></label>
+       <label class="fld"><span class="lb">Mindestanzahl Partien</span><input id="ggames" type="number" min="1" value="${t.minGames}"></label></div>`;
 }
 function renderGapRes() {
-  const j = gapJobs[rep]; let h = '';
-  const scan = $('#gscan') as HTMLButtonElement | null; if (scan) scan.disabled = !gapCfg?.tokenSet || j?.state === 'running';
-  if (!j || j.state === 'none') h = '<p class="mut">Noch keine Suche in diesem Repertoire gestartet.</p>';
-  else if (j.state === 'running' && j.indexing) {
+  const j = gapJobs[rep]; let h = '', foot = '';
+  const run = j?.state === 'running', scan = $('#gscan') as HTMLButtonElement;
+  scan.disabled = !gapCfg?.tokenSet || run; scan.classList.toggle('busy', run);
+  scan.innerHTML = run ? '<span class="spin s"></span>Suche läuft …' : j && j.state !== 'none' ? 'Erneut suchen' : 'Suchen';
+  if (!gapCfg?.tokenSet) foot = 'Erst den Zugangsschlüssel speichern.';
+  const prog = (title: string, sub: string, k: string) => `<div class="sec">Fortschritt</div><div class="prog"><div class="ph"><span class="spin"></span><div><b>${title}</b><span class="mut">${sub}</span></div></div><div class="kpis">${k}</div></div>`;
+  if (!j || j.state === 'none') h = '<div class="sec">Ergebnis</div><div class="note">Noch keine Suche in diesem Repertoire.</div>';
+  else if (run && j.indexing) {
     const { queue, games } = j.indexing;
-    h = `<p>Lichess liest die Partien von ${esc(j.player)} ein …${queue ? ` Platz ${queue.toLocaleString('de-DE')} in der Warteschlange,` : ''} bisher ${games.toLocaleString('de-DE')} Partien. Das dauert beim ersten Mal einige Minuten, danach geht es schnell.</p>`;
-  } else if (j.state === 'running') h = `<p>Suche läuft … ${j.queried} Stellungen abgefragt, ${j.open} warten. Die erste Suche braucht wegen der Pausen zwischen den Anfragen einige Minuten, spätere gehen schnell.</p>`;
-  else if (j.state === 'error') h = `<p class="err">${esc(j.message)}</p>`;
+    h = prog(`Lichess liest die Partien von ${esc(j.player)} ein`, 'Beim ersten Mal dauert das einige Minuten, danach geht es schnell.',
+      (queue ? kpi(queue, 'Platz in der Warteschlange') : '') + kpi(games, 'Partien eingelesen'));
+  } else if (run) h = prog('Stellungen werden abgefragt', 'Wegen der Pausen zwischen den Anfragen dauert die erste Suche einige Minuten.',
+    kpi(j.queried, 'Stellungen abgefragt') + kpi(j.open, 'warten noch'));
+  else if (j.state === 'error') h = `<div class="sec">Ergebnis</div><div class="note err">${esc(j.message)}</div>`;
   else {
-    const n = (k: number, one: string, many: string) => `<b>${k}</b> ${k === 1 ? one : many}`;
-    const src = j.source === 'masters' ? 'Masters' : j.source === 'player' ? `Spieler ${esc(j.player)} (${j.color === 'white' ? 'mit Weiß' : 'mit Schwarz'})` : 'Lichess';
-    h = `<p>${n(j.gaps.length, 'fehlender Gegnerzug', 'fehlende Gegnerzüge')}, ${n(j.own.length, 'Stellung ohne eigenen Zug', 'Stellungen ohne eigenen Zug')}. <span class="mut">Quelle: ${src}</span></p>`;
-    for (const g of j.gaps.slice(0, 100)) {
-      const ply = pathTo(g.key).length + 1, white = ply % 2 === 1;
-      h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(g.key))}</div><div><b>${Math.ceil(ply / 2)}${white ? '.' : '...'}${sanHtml(white ? 'w' : 'b', g.san)}</b> in ${pct(g.share)} der Partien (${g.games.toLocaleString('de-DE')}) · erreichbar zu ${pct(g.reach)}</div></div>
-        <div class="ga"><button data-act="go" data-k="${g.key}">Hingehen</button><button data-act="add" data-k="${g.key}" data-san="${esc(g.san)}">Eintragen</button></div></div>`;
+    foot = 'Quelle: ' + (j.source === 'masters' ? 'Masters' : j.source === 'player' ? `${esc(j.player)} (${j.color === 'white' ? 'mit Weiß' : 'mit Schwarz'})` : 'Lichess');
+    h = `<div class="sec">Ergebnis</div><div class="kpis">${kpi(j.gaps.length, j.gaps.length === 1 ? 'fehlender Gegnerzug' : 'fehlende Gegnerzüge')}${kpi(j.own.length, j.own.length === 1 ? 'Stellung ohne eigenen Zug' : 'Stellungen ohne eigenen Zug')}</div>`;
+    const go = (k: string) => `<button class="sm" data-act="go" data-k="${k}">Hingehen</button>`;
+    if (j.gaps.length) {
+      h += `<div class="sec">Fehlende Gegnerzüge${j.gaps.length > 100 ? ' <span>die 100 wichtigsten</span>' : ''}</div><div class="list">`;
+      for (const g of j.gaps.slice(0, 100)) {
+        const ply = pathTo(g.key).length + 1, white = ply % 2 === 1;
+        h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(g.key))}</div><div class="gm"><span class="mv">${Math.ceil(ply / 2)}${white ? '.' : '...'}${sanHtml(white ? 'w' : 'b', g.san)}</span>
+          <span class="sh" title="Anteil an den Partien"><i style="width:${Math.min(100, g.share * 100).toFixed(1)}%"></i></span><span class="gs">${pct(g.share)} von ${de(g.games)} · erreichbar zu ${pct(g.reach)}</span></div></div>
+          <div class="ga">${go(g.key)}<button class="sm soft" data-act="add" data-k="${g.key}" data-san="${esc(g.san)}">Eintragen</button></div></div>`;
+      }
+      h += '</div>';
     }
-    if (j.gaps.length > 100) h += `<p class="mut">Es werden die 100 wichtigsten angezeigt.</p>`;
     if (j.own.length) {
-      h += `<h3>Hier bist du am Zug, aber es fehlt noch dein Zug</h3>`;
-      for (const o of j.own.slice(0, 100)) h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(o.key))}</div><div>erreichbar zu ${pct(o.reach)}</div></div><div class="ga"><button data-act="go" data-k="${o.key}">Hingehen</button></div></div>`;
+      h += `<div class="sec">Hier fehlt dein Zug</div><div class="list">`;
+      for (const o of j.own.slice(0, 100)) h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(o.key))}</div><div class="gm"><span class="gs">erreichbar zu ${pct(o.reach)}</span></div></div><div class="ga">${go(o.key)}</div></div>`;
+      h += '</div>';
     }
   }
-  $('#gres').innerHTML = h;
+  $('#gres').innerHTML = h; $('#gfoot').innerHTML = foot;
 }
 function pollGaps() {
   clearTimeout(gapTimer);
