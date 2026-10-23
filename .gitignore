@@ -1,0 +1,4 @@
+node_modules/
+
+# SQLite-Shared-Memory-Index, wird automatisch neu erzeugt
+*.db-shm

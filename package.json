@@ -1,0 +1,30 @@
+{
+  "name": "chessbook-lokal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lokales Schach-Repertoire-Tool",
+  "scripts": {
+    "prestart": "node scripts/make-board.mjs --if-missing && node scripts/build.mjs",
+    "start": "tsx src/server.ts",
+    "board": "node scripts/make-board.mjs",
+    "test": "node --import tsx --test src/core.test.ts src/db.test.ts src/gaps.test.ts src/client/graph.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "chessground": "^9.2.1",
+    "chessops": "^0.15.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.4",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
