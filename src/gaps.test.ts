@@ -5,7 +5,7 @@ import { Store } from './db';
 import { START_KEY } from './core';
 import { scanGaps } from './gaps';
 import { ExplorerClient, ExplorerError, type ExplorerData } from './explorer';
-import { patchConfig, DEFAULTS } from './config';
+import { patchConfig, loadConfig, saveConfig, DEFAULTS } from './config';
 
 const fresh = () => new Store(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbx-')), 't.db'));
 const play = (s: Store, rep: 'white' | 'black', ...sans: string[]) => { let k = START_KEY; for (const x of sans) k = s.addSan(rep, k, x).toKey; return k; };
@@ -54,7 +54,7 @@ test('Lücken: Schwarz-Repertoire fragt schon die Startstellung ab, seltene Stel
 
 const ok = (j: unknown, status = 200, raw?: string) => ({ ok: status < 300, status, text: async () => raw ?? JSON.stringify(j) }) as Response;
 const mkClient = (fetchFn: typeof fetch, settings: any = { source: 'lichess' }, token = 'tok_12345678') =>
-  new ExplorerClient({ token, settings, fetchFn, delayMs: 0, retryWaitMs: 0, sleep: async () => {} });
+  new ExplorerClient({ token, settings, fetchFn, delayMs: 0, retryWaitMs: 0, netRetryMs: 0, sleep: async () => {} });
 const body = { white: 5, draws: 3, black: 2, moves: [{ san: 'e5', uci: 'e7e5', white: 3, draws: 2, black: 1 }] };
 
 test('Explorer-Client: Lichess-Datenbank, Summen und Token', async () => {
@@ -81,6 +81,45 @@ test('Explorer-Client: Spieler-Antwort als NDJSON (mehrere Zeilen, die letzte z�
   assert.equal(d.moves[0].san, 'e5');
 });
 
+// Antwort als Strom aus Teilstücken; mit fail bricht der Strom danach mit Fehler ab (wie ECONNRESET beim Lesen)
+const streamed = (parts: string[], fail = false) => {
+  const enc = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({ start(c) {
+    for (const p of parts) c.enqueue(enc.encode(p));
+    if (fail) c.error(Object.assign(new TypeError('terminated'), { cause: { code: 'ECONNRESET' } })); else c.close();
+  } });
+  return { ok: true, status: 200, body } as unknown as Response;
+};
+const playerSettings = { source: 'player', player: 'beispiel', color: 'white' };
+
+test('Explorer-Client: Spieler wird eingelesen, Fortschritt pro Zeile, Ergebnis ist die letzte Zeile', async () => {
+  const l1 = JSON.stringify({ white: 1, draws: 0, black: 1, moves: [], queuePosition: 33 });
+  const l2 = JSON.stringify({ white: 3, draws: 1, black: 2, moves: [], queuePosition: 0 });
+  const nd = `${l1}\n${l2}\n${JSON.stringify(body)}\n`;
+  const seen: unknown[] = [];
+  // Zeilen über Teilstücke verteilt, damit das Zusammensetzen geprüft wird
+  const d = await mkClient((async () => streamed([nd.slice(0, 10), nd.slice(10, 60), nd.slice(60)])) as any, playerSettings).query('f', p => seen.push(p));
+  assert.deepEqual(seen, [{ queue: 33, games: 2 }, { queue: 0, games: 6 }, { queue: null, games: 10 }]);
+  assert.deepEqual(d, { games: 10, moves: [{ san: 'e5', uci: 'e7e5', games: 6 }] });
+  // Normales (auch mehrzeiliges) JSON als Strom funktioniert weiter
+  assert.equal((await mkClient((async () => streamed([JSON.stringify(body, null, 2)])) as any).query('f')).games, 10);
+});
+
+test('Explorer-Client: Abbruch beim Lesen wird wiederholt, nach 4 Versuchen verständlicher Fehler', async () => {
+  let calls = 0;
+  const partial = JSON.stringify({ white: 1, draws: 0, black: 0, moves: [], queuePosition: 5 }) + '\n{"whi';
+  const c = mkClient((async () => (++calls < 3 ? streamed([partial], true) : streamed([JSON.stringify(body)]))) as any, playerSettings);
+  assert.equal((await c.query('f')).games, 10);
+  assert.equal(calls, 3);
+  calls = 0;
+  await assert.rejects(mkClient((async () => { calls++; return streamed([partial], true); }) as any, playerSettings).query('f'),
+    (e: ExplorerError) => e.code === 'NETWORK' && /abgebrochen/.test(e.message) && /ECONNRESET/.test(e.message));
+  assert.equal(calls, 4);
+  calls = 0;
+  const flaky = mkClient((async () => { if (++calls < 4) throw new TypeError('fetch failed'); return ok(body); }) as any);
+  assert.equal((await flaky.query('f')).games, 10);
+});
+
 test('Explorer-Client: Fehler werden verständlich gemeldet', async () => {
   let calls = 0;
   await assert.rejects(mkClient((async () => ok({}, 401)) as any).query('f'), (e: ExplorerError) => e.code === 'UNAUTHORIZED');
@@ -99,6 +138,36 @@ test('Einstellungen werden geprüft', () => {
   assert.equal(patchConfig(DEFAULTS, { player: ' Beispiel_1 ' }).player, 'Beispiel_1');
   assert.throws(() => patchConfig(DEFAULTS, { player: 'a b' }));
   assert.throws(() => patchConfig(DEFAULTS, { playerColor: 'rot' }));
-  assert.throws(() => patchConfig(DEFAULTS, { minShare: 0.9 }));
-  assert.equal(patchConfig(DEFAULTS, { minShare: 0.1, playerColor: 'black' }).playerColor, 'black');
+  assert.equal(patchConfig(DEFAULTS, { playerColor: 'black' }).playerColor, 'black');
+});
+
+test('Einstellungen: Schwellen pro Quelle als Teil-Update mit Prüfung', () => {
+  const c = patchConfig(DEFAULTS, { thresholds: { player: { minGames: 8 } } });
+  assert.deepEqual(c.thresholds.player, { minShare: 0.1, minGames: 8 });
+  assert.deepEqual(c.thresholds.masters, { minShare: 0.05, minGames: 30 });
+  assert.equal(DEFAULTS.thresholds.player.minGames, 5);                // Standardwerte bleiben unverändert
+  assert.equal(patchConfig(c, { thresholds: { lichess: { minShare: 0.2 } } }).thresholds.lichess.minShare, 0.2);
+  assert.throws(() => patchConfig(DEFAULTS, { thresholds: { player: { minShare: 0.9 } } }));
+  assert.throws(() => patchConfig(DEFAULTS, { thresholds: { player: { minGames: 0 } } }));
+  assert.throws(() => patchConfig(DEFAULTS, { thresholds: { chesscom: { minGames: 5 } } }));
+  assert.throws(() => patchConfig(DEFAULTS, { thresholds: 'x' }));
+});
+
+test('Einstellungen: alte Datei mit minShare/minGames wird auf Schwellen pro Quelle umgestellt', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbc-')), 'config.json');
+  fs.writeFileSync(file, JSON.stringify({ source: 'masters', minShare: 0.5, minGames: 300, minReach: 0.01 }));
+  const c = loadConfig(file);
+  assert.deepEqual(c.thresholds, { masters: { minShare: 0.5, minGames: 300 }, lichess: { minShare: 0.5, minGames: 300 }, player: { minShare: 0.1, minGames: 5 } });
+  assert.equal(c.minReach, 0.01);
+  saveConfig(file, c);
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved.minShare, undefined); assert.equal(saved.minGames, undefined);
+  assert.deepEqual(loadConfig(file), c);
+});
+
+test('Lücken: Abfragen werden auch ohne Fortschrittsmeldung gezählt', async () => {
+  const s = fresh();
+  play(s, 'white', 'e4');
+  const r = await scanGaps(s.state('white'), 'white', async () => mk(['e5', 100]), opt);
+  assert.equal(r.queried, 1);
 });

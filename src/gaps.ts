@@ -10,7 +10,7 @@ export interface ScanResult { gaps: Gap[]; own: OwnGap[]; queried: number }
  * Sucht Lücken: Stellungen, in denen der Gegner am Zug ist und häufig gespielte Züge im Repertoire fehlen,
  * sowie Stellungen, in denen du am Zug bist, aber noch kein eigener Zug hinterlegt ist.
  * "reach" ist die Wahrscheinlichkeit, die Stellung über dein Repertoire zu erreichen (Produkt der Gegnerzug-Anteile
- * auf dem besten Weg). Stellungen unterhalb von minReach werden nicht abgefragt.
+ * auf dem besten Weg). Stellungen unterhalb von minReach werden nicht abgefragt. minShare/minGames sind die Schwellen der aktiven Quelle.
  */
 export async function scanGaps(
   st: State, rep: Rep,
@@ -33,7 +33,8 @@ export async function scanGaps(
       continue;
     }
     const data = await getData(key, st.positions[key].fen);
-    onProgress?.(++queried, open.size);
+    queried++;
+    onProgress?.(queried, open.size);
     if (!data || data.games < opt.minGames) continue;
     const bySan = new Map(data.moves.map(m => [m.san, m]));
     for (const e of edges) { const m = bySan.get(e.san); if (m) relax(e.to, reach * m.games / data.games); }

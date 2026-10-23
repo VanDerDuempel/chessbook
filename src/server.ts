@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store, type Rep } from './db';
-import { ExplorerClient } from './explorer';
+import { ExplorerClient, type ExplorerProgress } from './explorer';
 import { scanGaps, type Gap, type OwnGap } from './gaps';
 import { loadConfig, saveConfig, patchConfig } from './config';
 
@@ -16,8 +16,9 @@ store.backup('start', 12 * 3600_000);
 // Lücken-Erkennung: Einstellungen (inkl. Lichess-Token) liegen nur lokal in data/config.json
 const CONFIG_FILE = path.join(path.dirname(DB_FILE), 'config.json');
 let config = loadConfig(CONFIG_FILE);
-const publicConfig = () => ({ tokenSet: !!config.lichessToken, source: config.source, player: config.player, playerColor: config.playerColor, minShare: config.minShare, minGames: config.minGames });
-interface Job { state: 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: Gap[]; own: OwnGap[]; source: string; player: string; color: string }
+const publicConfig = () => ({ tokenSet: !!config.lichessToken, source: config.source, player: config.player, playerColor: config.playerColor, thresholds: config.thresholds });
+// indexing: Lichess liest den Spieler gerade ein (Warteschlange, bisher gezählte Partien), sonst null
+interface Job { state: 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: Gap[]; own: OwnGap[]; source: string; player: string; color: string; indexing: ExplorerProgress | null }
 const jobs: Partial<Record<Rep, Job>> = {};
 let scanning = false;
 function startScan(rep: Rep): Job {
@@ -26,7 +27,7 @@ function startScan(rep: Rep): Job {
   scanning = true;
   // Beim Spieler gilt standardmäßig die Seite des Gegners: bei deinem Weiß-Repertoire seine Partien mit Schwarz und umgekehrt
   const color = config.playerColor === 'auto' ? (rep === 'white' ? 'black' : 'white') : config.playerColor;
-  const job: Job = { state: 'running', queried: 0, open: 0, message: '', gaps: [], own: [], source: config.source, player: config.player, color };
+  const job: Job = { state: 'running', queried: 0, open: 0, message: '', gaps: [], own: [], source: config.source, player: config.player, color, indexing: null };
   jobs[rep] = job;
   const client = new ExplorerClient({
     token: config.lichessToken, settings: { source: config.source, player: config.player, color },
@@ -37,11 +38,13 @@ function startScan(rep: Rep): Job {
   const getData = async (key: string, fen: string) => {
     const cached = store.cacheGet(key, cfgKey, maxAge);
     if (cached) return cached;
-    const d = await client.query(fen);
-    store.cachePut(key, cfgKey, d);
-    return d;
+    try {
+      const d = await client.query(fen, p => { job.indexing = p; });
+      store.cachePut(key, cfgKey, d);
+      return d;
+    } finally { job.indexing = null; }
   };
-  scanGaps(store.state(rep), rep, getData, config, (q, o) => { job.queried = q; job.open = o; })
+  scanGaps(store.state(rep), rep, getData, { ...config.thresholds[config.source], minReach: config.minReach }, (q, o) => { job.queried = q; job.open = o; })
     .then(r => { job.gaps = r.gaps; job.own = r.own; job.state = 'done'; })
     .catch(e => { job.state = 'error'; job.message = (e as Error).message; })
     .finally(() => { scanning = false; });
@@ -77,7 +80,7 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/')) {
       if (req.method === 'GET') {
         if (p === '/api/gaps-config') return send(res, 200, publicConfig());
-        if (p.startsWith('/api/gaps/')) return send(res, 200, jobs[rep(p.slice(10))] ?? { state: 'none', queried: 0, open: 0, message: '', gaps: [], own: [], source: '', player: '', color: '' });
+        if (p.startsWith('/api/gaps/')) return send(res, 200, jobs[rep(p.slice(10))] ?? { state: 'none', queried: 0, open: 0, message: '', gaps: [], own: [], source: '', player: '', color: '', indexing: null });
         if (p === '/api/export') return send(res, 200, store.exportAll());
         if (p.startsWith('/api/export-pgn/')) {
           res.writeHead(200, { 'content-type': 'application/x-chess-pgn; charset=utf-8' });
