@@ -341,8 +341,8 @@ $('#imp').onclick = async () => {
 
 // ---------- Lücken-Erkennung (Vergleich mit den häufigsten Zügen auf Lichess)
 interface GapRow { key: string; san: string; games: number; share: number; reach: number }
-interface GapJob { state: 'none' | 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: GapRow[]; own: { key: string; reach: number }[]; source: string; player: string; color: string }
-interface GapCfg { tokenSet: boolean; source: 'masters' | 'lichess' | 'player'; player: string; playerColor: 'auto' | 'white' | 'black'; minShare: number; minGames: number }
+interface GapJob { state: 'none' | 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: GapRow[]; own: { key: string; reach: number }[]; source: string; player: string; color: string; indexing?: { queue: number | null; games: number } | null }
+interface GapCfg { tokenSet: boolean; source: 'masters' | 'lichess' | 'player'; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds?: Partial<Record<GapCfg['source'], { minShare: number; minGames: number }>> }
 const gapJobs: Record<Rep, GapJob | null> = { white: null, black: null };
 let gapKeys = new Set<string>(), gapCfg: GapCfg | null = null, gapTimer = 0, editToken = false;
 const gdlg = $<HTMLDialogElement>('#gdlg');
@@ -362,12 +362,13 @@ async function loadGapJob() { gapJobs[rep] = await api('/api/gaps/' + rep); upda
 const SOURCES: [string, string, string][] = [
   ['masters', 'Masters', 'Partien von Großmeistern (Masters-Datenbank von Lichess).'],
   ['lichess', 'Lichess', 'Partien aller Spieler auf Lichess.'],
-  ['player', 'Spieler', 'Partien eines bestimmten Lichess-Spielers, zum Beispiel zur Vorbereitung auf einen Gegner. Beim ersten Mal muss Lichess die Partien des Spielers erst einlesen, das kann dauern.'],
+  ['player', 'Spieler', 'Partien eines bestimmten Lichess-Spielers, zum Beispiel zur Vorbereitung auf einen Gegner. Beim ersten Mal muss Lichess die Partien des Spielers erst einlesen, das kann einige Minuten dauern (bei vielen Partien 5–10 Minuten), danach geht es schnell.'],
 ];
 function renderGapCfg() {
   const c = gapCfg; if (!c) return;
   const seg = SOURCES.map(([v, n]) => `<button data-src="${v}"${v === c.source ? ' class="on"' : ''}>${n}</button>`).join('');
-  const desc = SOURCES.find(([v]) => v === c.source)?.[2] ?? '';
+  const [, sn, desc] = SOURCES.find(([v]) => v === c.source) ?? ['', '', ''];
+  const t = c.thresholds?.[c.source] ?? { minShare: 0.05, minGames: 30 };
   const opp = rep === 'white' ? 'mit Schwarz' : 'mit Weiß';
   const sel = (v: string, n: string) => `<option value="${v}"${v === c.playerColor ? ' selected' : ''}>${n}</option>`;
   $('#gcfg').innerHTML = `<h2>Lücken-Erkennung: ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>
@@ -381,15 +382,18 @@ function renderGapCfg() {
       ? `<div class="row"><label>Name <input id="gplayer" type="text" value="${esc(c.player)}" placeholder="Lichess-Name" maxlength="30" autocomplete="off"></label>
          <label>Partien <select id="gcolor">${sel('auto', 'Seite des Gegners (' + opp + ')')}${sel('white', 'mit Weiß')}${sel('black', 'mit Schwarz')}</select></label></div>`
       : '') +
-    `<div class="row"><label>Mindestanteil <input id="gshare" type="number" min="1" max="50" value="${Math.round(c.minShare * 100)}"> %</label>
-       <label>Mindestanzahl Partien <input id="ggames" type="number" min="1" value="${c.minGames}"></label></div>
+    `<div class="row"><label>Mindestanteil <input id="gshare" type="number" min="1" max="50" value="${Math.round(t.minShare * 100)}"> %</label>
+       <label>Mindestanzahl Partien <input id="ggames" type="number" min="1" value="${t.minGames}"></label><span class="mut">gilt für ${sn}</span></div>
      <div class="row"><button id="gscan" class="primary"${c.tokenSet ? '' : ' disabled'}>Suchen</button></div>`;
 }
 function renderGapRes() {
   const j = gapJobs[rep]; let h = '';
   const scan = $('#gscan') as HTMLButtonElement | null; if (scan) scan.disabled = !gapCfg?.tokenSet || j?.state === 'running';
   if (!j || j.state === 'none') h = '<p class="mut">Noch keine Suche in diesem Repertoire gestartet.</p>';
-  else if (j.state === 'running') h = `<p>Suche läuft … ${j.queried} Stellungen abgefragt, ${j.open} warten. Die erste Suche braucht wegen der Pausen zwischen den Anfragen einige Minuten, spätere gehen schnell.</p>`;
+  else if (j.state === 'running' && j.indexing) {
+    const { queue, games } = j.indexing;
+    h = `<p>Lichess liest die Partien von ${esc(j.player)} ein …${queue ? ` Platz ${queue.toLocaleString('de-DE')} in der Warteschlange,` : ''} bisher ${games.toLocaleString('de-DE')} Partien. Das dauert beim ersten Mal einige Minuten, danach geht es schnell.</p>`;
+  } else if (j.state === 'running') h = `<p>Suche läuft … ${j.queried} Stellungen abgefragt, ${j.open} warten. Die erste Suche braucht wegen der Pausen zwischen den Anfragen einige Minuten, spätere gehen schnell.</p>`;
   else if (j.state === 'error') h = `<p class="err">${esc(j.message)}</p>`;
   else {
     const n = (k: number, one: string, many: string) => `<b>${k}</b> ${k === 1 ? one : many}`;
@@ -436,8 +440,8 @@ gdlg.addEventListener('click', async e => {
 gdlg.addEventListener('change', async e => {
   const t = e.target as HTMLInputElement | HTMLSelectElement;
   try {
-    if (t.id === 'gshare') gapCfg = await api('/api/gaps-config', { minShare: Number(t.value) / 100 }, 'PUT');
-    else if (t.id === 'ggames') gapCfg = await api('/api/gaps-config', { minGames: Number(t.value) }, 'PUT');
+    if (t.id === 'gshare') gapCfg = await api('/api/gaps-config', { thresholds: { [gapCfg?.source ?? 'masters']: { minShare: Number(t.value) / 100 } } }, 'PUT');
+    else if (t.id === 'ggames') gapCfg = await api('/api/gaps-config', { thresholds: { [gapCfg?.source ?? 'masters']: { minGames: Number(t.value) } } }, 'PUT');
     else if (t.id === 'gplayer') gapCfg = await api('/api/gaps-config', { player: t.value.trim() }, 'PUT');
     else if (t.id === 'gcolor') gapCfg = await api('/api/gaps-config', { playerColor: t.value }, 'PUT');
   } catch (err) { toast((err as Error).message); renderGapCfg(); }
