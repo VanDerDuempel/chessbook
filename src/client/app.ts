@@ -312,12 +312,20 @@ addEventListener('keydown', e => {
 addEventListener('resize', () => cg.redrawAll());
 // Ziehgriff: Brettbreite (Spalte links) per Maus, gespeichert; Doppelklick setzt zurück
 const top = $('.top'), split = $('#split');
+// Größte Spaltenbreite, bei der Brett, Navigation und Leiste noch ins Fenster passen
+function maxBw() {
+  const b = $('#board').getBoundingClientRect(), bar = $('.bar').getBoundingClientRect(), c = $('.top .card').getBoundingClientRect();
+  return innerHeight - (b.top + scrollY) - (bar.bottom - b.bottom) - 15 - 28 + (c.width - b.width);
+}
+let bwWant: number | null = null;
 const setBw = (w: number | null) => {
+  bwWant = w;
   if (w === null) top.style.removeProperty('--bw');
-  else top.style.setProperty('--bw', Math.round(Math.max(280, Math.min(w, top.clientWidth - 24 - 280))) + 'px');
+  else top.style.setProperty('--bw', Math.round(Math.max(280, Math.min(w, top.clientWidth - 24 - 280, maxBw()))) + 'px');
   requestAnimationFrame(() => { cg.redrawAll(); if (L) focusCur('auto'); });
 };
 try { const w = Number(localStorage.getItem('cbbw')); if (w) setBw(w); } catch { /* ignorieren */ }
+addEventListener('resize', () => { if (bwWant !== null) setBw(bwWant); });
 split.addEventListener('pointerdown', e => {
   e.preventDefault(); split.setPointerCapture(e.pointerId); split.classList.add('drag'); document.body.classList.add('resizing');
   const x0 = top.getBoundingClientRect().left;
@@ -325,6 +333,7 @@ split.addEventListener('pointerdown', e => {
   const up = () => {
     split.removeEventListener('pointermove', move); split.classList.remove('drag'); document.body.classList.remove('resizing');
     try { localStorage.setItem('cbbw', String(parseFloat(top.style.getPropertyValue('--bw')) || '')); } catch { /* ignorieren */ }
+    bwWant = parseFloat(top.style.getPropertyValue('--bw')) || null;
   };
   split.addEventListener('pointermove', move); split.addEventListener('pointerup', up, { once: true });
 });
