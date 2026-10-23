@@ -7,6 +7,8 @@ Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 ### Neu
 - Training: Das Repertoire wird ab der aktuellen Stellung abgefragt. Der Gegner zieht zufällig aus dem Repertoire, falsche eigene Züge zählen als Fehler und zeigen die Lösung als Pfeil. Zähler für richtige und falsche Züge, Neustart am Ende jeder Variante. Taste T, Escape beendet.
 
+- Training ab markierten Stellungen: Rechtsklick auf einen Knoten bietet „Training ab hier“, bei mehreren markierten Knoten werden alle Varianten ab diesen Stellungen abgefragt. Button und Taste T nehmen ebenfalls die Markierung.
+
 ### Geändert
 - Training: Fehlerfrei gespielte Varianten kommen in derselben Runde nicht wieder, Varianten mit Fehler schon. Sind alle geschafft, beginnt eine neue Runde. Vorher wählte der Gegner rein zufällig, sodass manche Varianten mehrfach und andere kaum drankamen.
 

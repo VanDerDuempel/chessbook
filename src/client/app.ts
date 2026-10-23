@@ -20,9 +20,9 @@ let pending: { keys: string[]; n: number } | null = null;
 let marked = new Set<string>();
 let promo: { from: string; to: string; color: string } | null = null;
 let settingShapes = false;
-// Training: Ausgangsstellung, Zähler, Fehler in dieser Stellung, Lösung zeigen, besuchte Stellungen (in Zugreihenfolge) und gespielte Züge der Variante,
+// Training: Startstellungen, aktuelle Ausgangsstellung, Zähler, Fehler in dieser Stellung, Lösung zeigen, besuchte Stellungen (in Zugreihenfolge) und gespielte Züge der Variante,
 // Variante bisher fehlerfrei, erledigte Stellungen dieser Runde, Timer
-let tr: { start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; t: number } | null = null;
+let tr: { starts: string[]; start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; t: number } | null = null;
 const flips: Record<Rep, boolean> = { white: false, black: false };
 try { Object.assign(flips, JSON.parse(localStorage.getItem('cbflip') ?? '{}')); } catch { /* ignorieren */ }
 const orientation = (): Rep => (flips[rep] ? (rep === 'white' ? 'black' : 'white') : rep);
@@ -290,10 +290,15 @@ G.addEventListener('contextmenu', e => {
   const k = attr(e.target as Element, 'data-k');
   if (!k) { CM.hidden = true; return; }
   cmKeys = marked.has(k) ? [...marked] : [k];
-  CM.innerHTML = `<button>${cmKeys.length > 1 ? cmKeys.length + ' Züge löschen' : 'Löschen'}</button>`;
+  const n = cmKeys.length > 1 ? cmKeys.length + ' ' : '';
+  CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button><button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
   CM.style.left = e.clientX + 'px'; CM.style.top = e.clientY + 'px'; CM.hidden = false;
 });
-CM.onclick = () => { CM.hidden = true; if (cmKeys.length) void askDelete(cmKeys); };
+CM.onclick = e => {
+  const act = attr(e.target as Element, 'data-act'); if (!act || !cmKeys.length) return;
+  CM.hidden = true;
+  if (act === 'del') void askDelete(cmKeys); else startTrain(cmKeys);
+};
 document.addEventListener('pointerdown', e => { if (!CM.contains(e.target as Node)) CM.hidden = true; }, true);
 
 // ---------- Gesamtdarstellung
@@ -354,12 +359,14 @@ split.addEventListener('dblclick', () => { setBw(null); try { localStorage.remov
 // Der Gegner spielt zufällig einen seiner Repertoirezüge, man selbst muss einen eigenen finden.
 // Am Ende einer Variante geht es zurück zur Ausgangsstellung. Fehlerfrei gespielte Varianten kommen in dieser Runde nicht wieder,
 // sind alle geschafft, beginnt eine neue Runde. Nichts wird gespeichert.
-function toggleTrain() { if (tr) stopTrain(); else startTrain(); }
-function startTrain() {
-  const start = S.moves[cur]?.length ? cur : S.root;
-  if (!S.moves[start]?.length) { toast('Noch keine Züge im Repertoire'); return; }
-  CM.hidden = true; marked.clear(); pending = null; promo = null;
-  tr = { start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), t: 0 };
+// Mit markierten Knoten (oder per Rechtsklick) geht es ab diesen Stellungen, sonst ab der aktuellen.
+function toggleTrain() { if (tr) stopTrain(); else startTrain(marked.size ? [...marked] : undefined); }
+function startTrain(from?: string[]) {
+  const starts = (from ?? [S.moves[cur]?.length ? cur : S.root]).filter(k => S.moves[k]?.length);
+  if (!starts.length) { toast(from ? 'Ab hier keine Züge' : 'Noch keine Züge im Repertoire'); return; }
+  CM.hidden = true; pending = null; promo = null;
+  const start = starts.includes(cur) ? cur : starts[Math.floor(Math.random() * starts.length)];
+  tr = { starts, start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), t: 0 };
   document.body.classList.add('train');
   if (start !== cur) { stack.push(cur); fwd = []; cur = start; }
   refresh(); trStep();
@@ -373,7 +380,7 @@ function trStep() {
   const ms = (S.moves[cur] ?? []).filter(m => !t.seen.has(m.to));
   if (!ms.length) {
     if (t.clean) markDone(S, rep, [...t.seen], t.done);
-    const all = t.done.has(t.start);
+    const all = t.starts.every(k => t.done.has(k));
     if (all) { t.done.clear(); toast('Alle Varianten geschafft · neue Runde'); }
     flash('done'); t.t = window.setTimeout(trRestart, all ? 1600 : 900); return;
   }
@@ -388,6 +395,8 @@ function trGo(k: string, san: string) {
 }
 function trRestart() {
   const t = tr; if (!t) return;
+  const open = t.starts.filter(k => !t.done.has(k));
+  t.start = open[Math.floor(Math.random() * open.length)] ?? t.starts[0];
   t.seen = new Set([t.start]); t.line = pathTo(t.start); t.miss = t.hint = false; t.clean = true; fwd = [];
   if (cur !== t.start) { stack.push(cur); setCur(t.start); } else refresh();
   trStep();
