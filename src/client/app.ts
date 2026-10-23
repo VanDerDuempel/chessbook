@@ -252,18 +252,35 @@ function download(name: string, text: string, type: string) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
-$('#dat').onclick = () => { $('#dm').textContent = ''; $('#target').textContent = rep === 'white' ? 'Weiß' : 'Schwarz'; dlg.showModal(); };
+// Importziel: bei PGN ein Repertoire, bei JSON zusätzlich beide
+type Target = Rep | 'both';
+const TNAME: Record<Target, string> = { white: 'Weiß', black: 'Schwarz', both: 'Beide' };
+let tgt: Target = 'white', tgtJson = false;
+const isJson = () => txt.value.trim().startsWith('{');
+function renderTarget(reset = false) {
+  const j = isJson();
+  if (reset || j !== tgtJson) { tgtJson = j; tgt = j ? 'both' : rep; }
+  const opts: Target[] = j ? ['white', 'black', 'both'] : ['white', 'black'];
+  $('#itgt').innerHTML = opts.map(v => `<button data-t="${v}"${v === tgt ? ' class="on"' : ''}>${TNAME[v]}</button>`).join('');
+}
+$('#itgt').onclick = e => { const v = attr(e.target as Element, 'data-t') as Target | null; if (v) { tgt = v; renderTarget(); } };
+txt.oninput = () => renderTarget();
+$('#dat').onclick = () => { $('#dm').textContent = ''; renderTarget(true); dlg.showModal(); };
 $('#dclose').onclick = () => dlg.close();
 $('#xjson').onclick = async () => download('chessbook-export.json', JSON.stringify(await api('/api/export')), 'application/json');
 $('#xw').onclick = async () => download('chessbook-weiss.pgn', await (await fetch('/api/export-pgn/white')).text(), 'text/plain');
 $('#xb').onclick = async () => download('chessbook-schwarz.pgn', await (await fetch('/api/export-pgn/black')).text(), 'text/plain');
-$('#file').onchange = async e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) txt.value = await f.text(); };
+$('#file').onchange = async e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) { txt.value = await f.text(); renderTarget(); } };
 $('#imp').onclick = async () => {
-  const t = txt.value.trim(), out = $('#dm');
+  const t = txt.value.trim(), out = $('#dm'), to = tgt;
   if (!t) { out.textContent = 'Bitte Text einfügen oder eine Datei wählen.'; return; }
   try {
-    const r = t.startsWith('{') ? await api('/api/import-json', JSON.parse(t)) : await api('/api/import-pgn', { rep, text: t });
-    out.textContent = `Fertig. Neue Stellungen: ${r.positions}, neue Züge: ${r.moves}, übersprungen: ${r.skipped}, Pfeile und Kreise: ${r.shapes}.`;
+    const r = isJson()
+      ? await api('/api/import-json', { data: JSON.parse(t), reps: to === 'both' ? ['white', 'black'] : [to] })
+      : await api('/api/import-pgn', { rep: to, text: t });
+    const other = to !== 'both' && to !== rep;
+    out.textContent = `Fertig (${TNAME[to]}). Neue Stellungen: ${r.positions}, neue Züge: ${r.moves}, übersprungen: ${r.skipped}, Pfeile und Kreise: ${r.shapes}.` +
+      (other ? ` Geöffnet ist weiter ${TNAME[rep]}, zum Ansehen oben auf ${TNAME[to]} umschalten.` : '');
     await load(); refresh();
   } catch (e) { out.textContent = 'Fehler: ' + (e as Error).message; }
 };

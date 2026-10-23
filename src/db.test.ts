@@ -118,3 +118,27 @@ test('Export dieses Programms lässt sich wieder einlesen', () => {
   assert.equal(r.skipped, 0);
   assert.deepEqual(Object.keys(b.state('white').positions).sort(), Object.keys(a.state('white').positions).sort());
 });
+
+test('JSON-Import nur für Schwarz lässt Weiß unverändert', () => {
+  const a = fresh();
+  play(a, 'e4', 'c5');
+  a.addSan('black', START_KEY, 'd4');
+  const b = fresh();
+  play(b, 'd4');
+  const vorher = b.state('white');
+  const r = b.importJson(a.exportAll(), ['black']);
+  assert.equal(r.moves, 1);
+  assert.deepEqual(b.state('white'), vorher);
+  assert.deepEqual(Object.keys(b.state('black').positions).sort(), Object.keys(a.state('black').positions).sort());
+});
+
+test('Ungültiges Format im nicht gewählten Repertoire stört nicht', () => {
+  const a = fresh();
+  a.addSan('black', START_KEY, 'e4');
+  const data = { version: 1, white: { foo: 1 }, black: a.state('black') };
+  assert.throws(() => fresh().importJson(data));
+  const b = fresh();
+  assert.equal(b.importJson(data, ['black']).moves, 1);
+  assert.throws(() => b.importJson(data, ['white']), /white/);
+  assert.throws(() => b.importJson(data, []));
+});

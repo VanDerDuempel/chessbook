@@ -94,7 +94,12 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && p === '/api/gaps/scan') return send(res, 200, startScan(rep(b.rep)));
       if (req.method === 'POST' && p === '/api/move-san') return send(res, 200, store.addSan(rep(b.rep), String(b.from), String(b.san)));
       if (req.method === 'PUT' && p === '/api/shapes') { store.setShapes(rep(b.rep), String(b.key), b.shapes); return send(res, 200, { ok: true }); }
-      if (req.method === 'POST' && p === '/api/import-json') return send(res, 200, store.importJson(b));
+      if (req.method === 'POST' && p === '/api/import-json') {
+        // Alt: Export-JSON direkt als Body. Neu: {data, reps?}
+        if (b.white && b.black) return send(res, 200, store.importJson(b));
+        if (b.reps !== undefined && !Array.isArray(b.reps)) throw new Error('reps muss eine Liste sein');
+        return send(res, 200, store.importJson(b.data, b.reps?.map(rep)));
+      }
       if (req.method === 'POST' && p === '/api/import-pgn') return send(res, 200, store.importPgn(rep(b.rep), String(b.text ?? '')));
       return send(res, 404, { error: 'Unbekannte Route' });
     }

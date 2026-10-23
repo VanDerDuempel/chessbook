@@ -200,13 +200,14 @@ export class Store {
     return makePgn(game) + '\n';
   }
 
-  /** Liest einen JSON-Export dieses Programms ein (fügt hinzu, ersetzt nichts). */
-  importJson(data: any) {
-    for (const rep of REPS) if (!data?.[rep]?.positions || !data[rep].moves) throw new Error(`Ungültiges Format (${rep})`);
+  /** Liest einen JSON-Export dieses Programms ein (fügt hinzu, ersetzt nichts). Geprüft und übernommen werden nur die gewählten Repertoires. */
+  importJson(data: any, reps: Rep[] = REPS) {
+    if (!reps.length) throw new Error('Kein Repertoire gewählt');
+    for (const rep of reps) if (!data?.[rep]?.positions || !data[rep].moves) throw new Error(`Ungültiges Format (${rep})`);
     const stats = { positions: 0, moves: 0, skipped: 0, shapes: 0 };
     this.backup('vor-import');
     this.db.transaction(() => {
-      for (const rep of REPS) {
+      for (const rep of reps) {
         const g = data[rep];
         const done = new Set<string>();
         const queue = [START_KEY];
