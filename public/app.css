@@ -197,7 +197,7 @@ dialog .drop textarea{display:block;height:140px;border:0;border-radius:0;backgr
 .cg-wrap.orientation-white .ranks :nth-child(odd),.cg-wrap.orientation-white .files :nth-child(odd),.cg-wrap.orientation-black .ranks :nth-child(even),.cg-wrap.orientation-black .files :nth-child(even){color:#f3e3c3}
 /* Volle Fensterhöhe: Brettbreite richtet sich nach der Höhe, der Graph füllt die Zeile */
 @media(min-width:861px){
-  .top{grid-template-columns:minmax(0,clamp(320px,calc(100dvh - 310px),720px)) minmax(280px,1fr);min-height:calc(100dvh - 110px)}
+  .top{grid-template-columns:minmax(0,var(--bw,clamp(320px,calc(100dvh - 310px),720px))) 24px minmax(280px,1fr);gap:0;min-height:calc(100dvh - 110px)}
   .wrap{max-width:none}
   #gwrap{min-height:0}
 }
@@ -213,3 +213,11 @@ dialog .drop textarea{display:block;height:140px;border:0;border-radius:0;backgr
 .badge{stroke:var(--panel);stroke-width:2}
 .dh h2{align-self:center}
 .sec:empty{margin:16px 0 0}
+/* Ziehgriff zwischen Brett und Graph */
+#split{display:none}
+@media(min-width:861px){
+  #split{display:flex;align-items:center;justify-content:center;cursor:col-resize;touch-action:none}
+  #split::before{content:"";width:4px;height:56px;border-radius:2px;background:var(--bd);transition:background .15s,height .15s}
+  #split:hover::before,#split.drag::before{background:var(--accent);height:96px}
+}
+body.resizing{cursor:col-resize;user-select:none}

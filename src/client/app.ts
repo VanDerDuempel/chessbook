@@ -310,6 +310,25 @@ addEventListener('keydown', e => {
   if (f[e.key]) { e.preventDefault(); f[e.key](); } else if (e.key === 'Escape') { CM.hidden = true; clearMarks(); }
 });
 addEventListener('resize', () => cg.redrawAll());
+// Ziehgriff: Brettbreite (Spalte links) per Maus, gespeichert; Doppelklick setzt zurück
+const top = $('.top'), split = $('#split');
+const setBw = (w: number | null) => {
+  if (w === null) top.style.removeProperty('--bw');
+  else top.style.setProperty('--bw', Math.round(Math.max(280, Math.min(w, top.clientWidth - 24 - 280))) + 'px');
+  requestAnimationFrame(() => { cg.redrawAll(); if (L) focusCur('auto'); });
+};
+try { const w = Number(localStorage.getItem('cbbw')); if (w) setBw(w); } catch { /* ignorieren */ }
+split.addEventListener('pointerdown', e => {
+  e.preventDefault(); split.setPointerCapture(e.pointerId); split.classList.add('drag'); document.body.classList.add('resizing');
+  const x0 = top.getBoundingClientRect().left;
+  const move = (ev: PointerEvent) => setBw(ev.clientX - x0 - 12);
+  const up = () => {
+    split.removeEventListener('pointermove', move); split.classList.remove('drag'); document.body.classList.remove('resizing');
+    try { localStorage.setItem('cbbw', String(parseFloat(top.style.getPropertyValue('--bw')) || '')); } catch { /* ignorieren */ }
+  };
+  split.addEventListener('pointermove', move); split.addEventListener('pointerup', up, { once: true });
+});
+split.addEventListener('dblclick', () => { setBw(null); try { localStorage.removeItem('cbbw'); } catch { /* ignorieren */ } });
 
 // ---------- Daten (Export und Import)
 const dlg = $<HTMLDialogElement>('#dlg'), txt = $<HTMLTextAreaElement>('#txt');
