@@ -23,7 +23,7 @@ Anderer Port: `set PORT=3001 && npm start` (Windows) bzw. `PORT=3001 npm start` 
 - **Lücken:** Vergleicht das Repertoire mit den häufigsten Zügen im Lichess-Explorer (Masters, alle Lichess-Partien oder ein bestimmter Spieler) und zeigt fehlende Gegnerzüge sowie Stellungen ohne eigenen Zug, sortiert nach Erreichbarkeit. Braucht einen kostenlosen Lichess-Token, der nur in `data/config.json` gespeichert wird.
 
 ## Daten
-Im Dialog **Daten**: Export als JSON (beide Repertoires samt Pfeilen und Kreisen) oder als PGN (für Lichess-Studien, Pfeile und Kreise als `[%cal]`/`[%csl]`). Import von JSON-Exporten oder PGN mit Varianten; es wird nur hinzugefügt. Ein erneuter Import ändert nichts.
+Im Dialog **Daten**: Export als JSON (beide Repertoires samt Pfeilen und Kreisen) oder als PGN (für Lichess-Studien, Pfeile und Kreise als `[%cal]`/`[%csl]`). Import von JSON-Exporten oder PGN mit Varianten; es wird nur hinzugefügt. Das Ziel wählst du über dem Textfeld: ein PGN geht nach Weiß oder Schwarz, aus einem JSON lassen sich beide oder nur ein Repertoire übernehmen. Ein erneuter Import ändert nichts.
 
 ## Sicherungen
 - Datenbank: `data/chessbook.db`
