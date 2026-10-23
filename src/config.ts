@@ -1,11 +1,16 @@
 import fs from 'node:fs';
+import type { Source } from './explorer';
 
-export type Source = 'masters' | 'lichess' | 'player';
 export interface Config { lichessToken: string; source: Source; player: string; playerColor: 'auto' | 'white' | 'black'; minShare: number; minGames: number; minReach: number }
 export const DEFAULTS: Config = { lichessToken: '', source: 'lichess', player: '', playerColor: 'auto', minShare: 0.05, minGames: 30, minReach: 0.005 };
 
 export function loadConfig(file: string): Config {
-  try { return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch { return { ...DEFAULTS }; }
+  let saved: any = {};
+  try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* keine oder kaputte Datei: Standardwerte */ }
+  // Nur bekannte Felder übernehmen, veraltete Einträge fallen beim nächsten Speichern weg
+  const c = { ...DEFAULTS };
+  for (const k of Object.keys(DEFAULTS) as (keyof Config)[]) if (saved?.[k] !== undefined) (c as any)[k] = saved[k];
+  return c;
 }
 export const saveConfig = (file: string, c: Config) => fs.writeFileSync(file, JSON.stringify(c, null, 2));
 

@@ -18,7 +18,7 @@ test('Layout: Eltern mittig über den Kindern, keine Überlappung, Startstellung
   for (const xs of Object.values(byRow)) { xs.sort((a, b) => a - b); for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= NODE_W); }
   const e4 = st.moves[START_KEY][0].to, kids = st.moves[e4].map(m => L.pos[m.to].x);
   assert.equal(L.pos[e4].x, (Math.min(...kids) + Math.max(...kids)) / 2);
-  assert.equal(L.label[e4], '1.e4'); assert.equal(L.side[st.moves[e4][0].to], 'b');
+  assert.equal(L.num[e4] + L.san[e4], '1.e4'); assert.equal(L.side[st.moves[e4][0].to], 'b');
 });
 
 test('Layout: Transposition zählt Vorgänger und bleibt ein Knoten', () => {

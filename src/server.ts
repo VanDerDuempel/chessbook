@@ -50,7 +50,7 @@ function startScan(rep: Rep): Job {
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png',
+  '.svg': 'image/svg+xml', '.png': 'image/png',
 };
 const rep = (v: unknown): Rep => {
   if (v === 'white' || v === 'black') return v;
@@ -76,7 +76,6 @@ const server = http.createServer(async (req, res) => {
 
     if (p.startsWith('/api/')) {
       if (req.method === 'GET') {
-        if (p === '/api/health') return send(res, 200, { ok: true });
         if (p === '/api/gaps-config') return send(res, 200, publicConfig());
         if (p.startsWith('/api/gaps/')) return send(res, 200, jobs[rep(p.slice(10))] ?? { state: 'none', queried: 0, open: 0, message: '', gaps: [], own: [], source: '', player: '', color: '' });
         if (p === '/api/export') return send(res, 200, store.exportAll());
@@ -95,7 +94,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && p === '/api/gaps/scan') return send(res, 200, startScan(rep(b.rep)));
       if (req.method === 'POST' && p === '/api/move-san') return send(res, 200, store.addSan(rep(b.rep), String(b.from), String(b.san)));
       if (req.method === 'PUT' && p === '/api/shapes') { store.setShapes(rep(b.rep), String(b.key), b.shapes); return send(res, 200, { ok: true }); }
-      if (req.method === 'POST' && (p === '/api/import-json' || p === '/api/import-prototype')) return send(res, 200, store.importJson(b));
+      if (req.method === 'POST' && p === '/api/import-json') return send(res, 200, store.importJson(b));
       if (req.method === 'POST' && p === '/api/import-pgn') return send(res, 200, store.importPgn(rep(b.rep), String(b.text ?? '')));
       return send(res, 404, { error: 'Unbekannte Route' });
     }

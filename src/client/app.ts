@@ -195,7 +195,7 @@ function hidePv() { PV.hidden = true; pvKey = null; }
 G.addEventListener('mousemove', e => {
   const k = pan ? null : attr(e.target as Element, 'data-k');
   if (!k || !S.positions[k]) { hidePv(); return; }
-  if (pvKey !== k) { pvKey = k; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${L.label[k] ?? ''}</div>`; }
+  if (pvKey !== k) { pvKey = k; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}</div>`; }
   let x = e.clientX + 18, y = e.clientY + 18;
   if (x + 212 > innerWidth) x = e.clientX - 222;
   if (y + 236 > innerHeight) y = e.clientY - 246;

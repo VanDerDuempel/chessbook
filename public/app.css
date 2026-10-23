@@ -30,8 +30,8 @@ section{min-width:0;display:flex;flex-direction:column}
 #promo[hidden]{display:none}
 #promo>div{display:flex;gap:8px;background:var(--panel);padding:10px;border-radius:14px;box-shadow:var(--shadow)}
 #promo button{width:68px;height:68px;padding:4px}#promo img{width:100%;height:100%}
-/* Brett: Holztextur (wird von scripts/make-board.mjs erzeugt, public/boards/wood.png); Farben --sq-light/--sq-dark dienen als Ersatz */
-cg-board{background-color:var(--sq-light);background-image:url(boards/wood.png),repeating-conic-gradient(var(--sq-dark) 0% 25%,transparent 0% 50%);background-size:100% 100%,25% 25%}
+/* Brett: Holztextur; --sq-light/--sq-dark färben das Vorschau-Brett */
+cg-board{background:url(boards/wood.png) 0 0/100% 100%}
 /* Figuren: Lichess-Satz cburnett mit kräftigerer Umrandung (Dateien in public/pieces) */
 .cg-wrap piece.pawn.white{background-image:url(pieces/wP.svg)}
 .cg-wrap piece.pawn.black{background-image:url(pieces/bP.svg)}

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Store } from './db';
-import { START_KEY, START_FEN } from './core';
+import { START_KEY } from './core';
 
 const fresh = () => new Store(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cb-')), 't.db'));
 function play(s: Store, ...sans: string[]) {
@@ -55,26 +55,10 @@ test('Repertoires sind getrennt', () => {
   assert.equal(Object.keys(s.state('black').positions).length, 1);
 });
 
-test('Import aus dem Prototyp übernimmt Züge, Pfeile und Kreise', () => {
+test('Ungültige Importdaten werden abgelehnt, ohne eine Sicherung anzulegen', () => {
   const s = fresh();
-  const data = {
-    w: {
-      root: 'r', nodes: { r: { fen: START_FEN }, a: { fen: 'x', arrows: [{ f: 'e2', t: 'e4', c: 'g' }, { f: 'e4', t: 'e4', c: 'r' }] }, b: { fen: 'y' } },
-      edges: { r: [{ san: 'e4', to: 'a' }], a: [{ san: 'e5', to: 'b' }], b: [] },
-    },
-    b: { root: 'x', nodes: { x: { fen: START_FEN } }, edges: { x: [] } },
-  };
-  const stats = s.importPrototype(data);
-  assert.deepEqual(stats, { positions: 2, moves: 2, skipped: 0, shapes: 2 });
-  const st = s.state('white');
-  const e4 = st.moves[START_KEY][0].to;
-  assert.deepEqual(st.positions[e4].shapes, [{ orig: 'e2', dest: 'e4', brush: 'green' }, { orig: 'e4', brush: 'red' }]);
-  assert.ok(fs.readdirSync(s.backupDir).some(n => n.includes('vor-import')));
-  assert.equal(s.importPrototype(data).moves, 0); // zweiter Import ändert nichts
-});
-
-test('Ungültige Importdaten werden abgelehnt', () => {
-  assert.throws(() => fresh().importPrototype({ foo: 1 }));
+  assert.throws(() => s.importJson({ foo: 1 }));
+  assert.ok(!fs.existsSync(s.backupDir) || !fs.readdirSync(s.backupDir).some(n => n.includes('vor-import')));
 });
 
 test('PGN-Import mit Varianten und Pfeilen', () => {
@@ -111,22 +95,4 @@ test('Export dieses Programms lässt sich wieder einlesen', () => {
   const r = b.importJson(a.exportAll());
   assert.equal(r.skipped, 0);
   assert.deepEqual(Object.keys(b.state('white').positions).sort(), Object.keys(a.state('white').positions).sort());
-});
-
-test('Alte Rochade-Schreibweise (e1h1) wird beim Öffnen mit e1g1 zusammengeführt', () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cb-')), 't.db');
-  const s = new Store(file);
-  play(s, 'e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'O-O');
-  const before = s.state('white');
-  const castle = Object.entries(before.moves).flatMap(([f, ms]) => ms.map(m => ({ f, ...m }))).find(m => m.san === 'O-O')!;
-  assert.equal(castle.uci, 'e1g1');
-  s.db.prepare("INSERT INTO moves(repertoire,from_key,to_key,uci,san,ord) VALUES('white',?,?,?,?,99)").run(castle.f, castle.to, 'e1h1', 'O-O');
-  s.db.pragma('user_version = 1');
-  s.db.close();
-  const again = new Store(file);
-  const after = again.state('white');
-  const all = Object.values(after.moves).flat();
-  assert.equal(all.filter(m => m.san === 'O-O').length, 1);
-  assert.equal(all.length, Object.values(before.moves).flat().length);
-  assert.ok(fs.readdirSync(again.backupDir).some(n => n.includes('vor-migration')));
 });

@@ -32,16 +32,14 @@ CREATE TABLE IF NOT EXISTS explorer_cache(
   PRIMARY KEY(key,cfg));`;
 
 export class Store {
-  readonly db: Database.Database;
+  private readonly db: Database.Database;
 
   constructor(readonly file: string, readonly backupDir = path.join(path.dirname(file), 'backups')) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     this.db = new Database(file);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
-    const version = this.db.pragma('user_version', { simple: true }) as number;
     this.db.exec(SCHEMA);
-    if (version < 2) { this.migrateCastling(); this.db.pragma('user_version = 2'); }
     const ins = this.db.prepare('INSERT OR IGNORE INTO positions(repertoire,key,fen) VALUES(?,?,?)');
     for (const r of REPS) ins.run(r, START_KEY, START_FEN);
   }
@@ -53,18 +51,6 @@ export class Store {
   }
   cachePut(key: string, cfg: string, data: unknown) {
     this.db.prepare('INSERT OR REPLACE INTO explorer_cache(key,cfg,fetched_at,data) VALUES(?,?,?,?)').run(key, cfg, Date.now(), JSON.stringify(data));
-  }
-
-  /** Ältere Versionen haben Rochaden als "König schlägt Turm" (e1h1) gespeichert, neuere als e1g1. Beide Schreibweisen führten zu doppelten Kanten. */
-  private migrateCastling() {
-    const where = "san LIKE 'O-O%' AND uci IN ('e1h1','e1a1','e8h8','e8a8')";
-    const n = (this.db.prepare(`SELECT COUNT(*) c FROM moves WHERE ${where}`).get() as { c: number }).c;
-    if (!n) return;
-    this.backup('vor-migration');
-    this.db.transaction(() => {
-      this.db.exec(`UPDATE OR IGNORE moves SET uci = CASE uci WHEN 'e1h1' THEN 'e1g1' WHEN 'e1a1' THEN 'e1c1' WHEN 'e8h8' THEN 'e8g8' ELSE 'e8c8' END WHERE ${where}`);
-      this.db.exec(`DELETE FROM moves WHERE ${where}`);
-    })();
   }
 
   /** Sicherungskopie der Datenbank. Mit minAgeMs wird übersprungen, wenn schon eine frische existiert. */
@@ -151,43 +137,6 @@ export class Store {
     this.db.prepare('UPDATE positions SET shapes=? WHERE repertoire=? AND key=?').run(JSON.stringify(shapes), rep, key);
   }
 
-  /** Liest das JSON aus dem Daten-Feld des Prototyps ein (fügt hinzu, ersetzt nichts). */
-  importPrototype(data: any) {
-    const BRUSH: Record<string, string> = { g: 'green', r: 'red', b: 'blue', y: 'yellow' };
-    const stats = { positions: 0, moves: 0, skipped: 0, shapes: 0 };
-    this.backup('vor-import');
-    this.db.transaction(() => {
-      for (const [pk, rep] of [['w', 'white'], ['b', 'black']] as const) {
-        const g = data?.[pk];
-        if (!g?.root || !g.nodes || !g.edges) throw new Error(`Ungültiges Format (${pk})`);
-        const map = new Map<string, string>([[g.root, START_KEY]]);
-        const queue: string[] = [g.root];
-        const done = new Set<string>();
-        while (queue.length) {
-          const pkey = queue.shift()!;
-          if (done.has(pkey)) continue;
-          done.add(pkey);
-          for (const e of g.edges[pkey] ?? []) {
-            try {
-              const r = this.addSan(rep, map.get(pkey)!, String(e.san));
-              if (r.newPosition) stats.positions++;
-              if (r.newMove) stats.moves++;
-              if (!map.has(e.to)) map.set(e.to, r.toKey);
-              queue.push(e.to);
-            } catch { stats.skipped++; }
-          }
-        }
-        for (const [pkey, key] of map) {
-          const shapes: Shape[] = (g.nodes[pkey]?.arrows ?? [])
-            .filter((a: any) => BRUSH[a?.c] && /^[a-h][1-8]$/.test(a.f) && /^[a-h][1-8]$/.test(a.t))
-            .map((a: any) => (a.f === a.t ? { orig: a.f, brush: BRUSH[a.c] } : { orig: a.f, dest: a.t, brush: BRUSH[a.c] }));
-          if (shapes.length) { this.setShapes(rep, key, shapes); stats.shapes += shapes.length; }
-        }
-      }
-    })();
-    return stats;
-  }
-
   /** Fügt Pfeile und Kreise zu den vorhandenen hinzu (ohne Doppelte). */
   mergeShapes(rep: Rep, key: string, add: Shape[]) {
     const row = this.db.prepare('SELECT shapes FROM positions WHERE repertoire=? AND key=?').get(rep, key) as { shapes: string } | undefined;
@@ -249,14 +198,14 @@ export class Store {
     return makePgn(game) + '\n';
   }
 
-  /** Liest einen Export dieses Programms (version 1) ein. */
-  importState(data: any) {
+  /** Liest einen JSON-Export dieses Programms ein (fügt hinzu, ersetzt nichts). */
+  importJson(data: any) {
+    for (const rep of REPS) if (!data?.[rep]?.positions || !data[rep].moves) throw new Error(`Ungültiges Format (${rep})`);
     const stats = { positions: 0, moves: 0, skipped: 0, shapes: 0 };
     this.backup('vor-import');
     this.db.transaction(() => {
       for (const rep of REPS) {
-        const g = data?.[rep];
-        if (!g?.positions || !g.moves) throw new Error(`Ungültiges Format (${rep})`);
+        const g = data[rep];
         const done = new Set<string>();
         const queue = [START_KEY];
         while (queue.length) {
@@ -277,11 +226,5 @@ export class Store {
       }
     })();
     return stats;
-  }
-
-  /** Erkennt, ob es ein Prototyp-Export ({w,b}) oder ein Export dieses Programms ({white,black}) ist. */
-  importJson(data: any) {
-    if (data?.white && data?.black) return this.importState(data);
-    return this.importPrototype(data);
   }
 }

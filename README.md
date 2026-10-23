@@ -20,9 +20,10 @@ Anderer Port: `set PORT=3001 && npm start` (Windows) bzw. `PORT=3001 npm start` 
 - **Graph:** Baum aller Stellungen. Mausrad zoomt, Ziehen verschiebt, Klick springt zur Stellung, Fahren über einen Knoten zeigt eine Vorschau. Orange Linien führen zur aktuellen Stellung, grüne weg davon, die aktuelle Zugfolge ist blau. Ein Abzeichen zeigt Stellungen, die über mehrere Zugfolgen erreichbar sind.
 - **Löschen:** Rechtsklick auf einen Knoten. Gelöscht wird die Stellung und alles, was danach nicht mehr erreichbar ist. Stellungen, die über einen anderen Weg erreichbar bleiben, bleiben erhalten. Bei mehr als einer betroffenen Stellung fragt das Programm nach.
 - **Analysieren:** Öffnet Lichess mit der Zugfolge, Brett immer aus Sicht des Repertoires.
+- **Lücken:** Vergleicht das Repertoire mit den häufigsten Zügen im Lichess-Explorer (Masters, alle Lichess-Partien oder ein bestimmter Spieler) und zeigt fehlende Gegnerzüge sowie Stellungen ohne eigenen Zug, sortiert nach Erreichbarkeit. Braucht einen kostenlosen Lichess-Token, der nur in `data/config.json` gespeichert wird.
 
 ## Daten
-Im Dialog **Daten**: Export als JSON (beide Repertoires samt Pfeilen und Kreisen) oder als PGN (für Lichess-Studien, Pfeile und Kreise als `[%cal]`/`[%csl]`). Import von JSON (auch aus dem Prototyp) oder PGN mit Varianten; es wird nur hinzugefügt. Ein erneuter Import ändert nichts.
+Im Dialog **Daten**: Export als JSON (beide Repertoires samt Pfeilen und Kreisen) oder als PGN (für Lichess-Studien, Pfeile und Kreise als `[%cal]`/`[%csl]`). Import von JSON-Exporten oder PGN mit Varianten; es wird nur hinzugefügt. Ein erneuter Import ändert nichts.
 
 ## Sicherungen
 - Datenbank: `data/chessbook.db`
@@ -32,7 +33,8 @@ Im Dialog **Daten**: Export als JSON (beide Repertoires samt Pfeilen und Kreisen
 
 ## Entwicklung
 - `npm test` Tests, `npm run typecheck` Typprüfung, `npm run build` baut `public/app.js` neu (nach Änderungen unter `src/client`).
-- `src/core.ts` Schachlogik und Stellungsschlüssel, `src/db.ts` Datenbank, Import und Export, `src/server.ts` lokale Schnittstelle, `src/client/` Oberfläche.
+- `src/core.ts` Schachlogik und Stellungsschlüssel, `src/db.ts` Datenbank, Import und Export, `src/server.ts` lokale Schnittstelle, `src/gaps.ts`/`src/explorer.ts`/`src/config.ts` Lücken-Erkennung, `src/client/` Oberfläche.
+- `public/app.js` und `public/css/` werden erzeugt und liegen nicht im Repo.
 
 ## Bausteine
 Brett: [chessground](https://github.com/lichess-org/chessground), Regeln und PGN: [chessops](https://github.com/niklasf/chessops) (beide GPL-3.0), Figuren "cburnett" von Colin M.L. Burnett (Lichess-Standardsatz), Datenbank: better-sqlite3.

@@ -5,11 +5,9 @@ export const NODE_W = 124, NODE_H = 30, GAP_X = 134, GAP_Y = 58;
 
 export interface Layout {
   pos: Record<string, { x: number; y: number }>;
-  label: Record<string, string>;
   num: Record<string, string>;
   san: Record<string, string>;
   side: Record<string, 'w' | 'b'>;
-  piece: Record<string, string>;
   parent: Record<string, string>;
   incoming: Record<string, number>;
   width: number;
@@ -19,7 +17,7 @@ export interface Layout {
 /** Baum-Layout über den Spannbaum des Graphen: jede Stellung steht unter dem Vorgänger, über den sie zuerst erreicht wurde. Die Startstellung wird nicht gezeichnet. */
 export function layout(st: State): Layout {
   const depth: Record<string, number> = { [st.root]: 0 };
-  const L: Layout = { pos: {}, label: {}, num: {}, san: {}, side: {}, piece: {}, parent: {}, incoming: {}, width: 0, height: 0 };
+  const L: Layout = { pos: {}, num: {}, san: {}, side: {}, parent: {}, incoming: {}, width: 0, height: 0 };
   const kids: Record<string, string[]> = {};
   let frontier = [st.root];
   while (frontier.length) {
@@ -31,9 +29,7 @@ export function layout(st: State): Layout {
       const white = d % 2 === 1;
       L.num[m.to] = `${Math.ceil(d / 2)}${white ? '.' : '...'}`;
       L.san[m.to] = m.san;
-      L.label[m.to] = L.num[m.to] + m.san;
       L.side[m.to] = white ? 'w' : 'b';
-      L.piece[m.to] = /^[KQRBN]/.test(m.san) ? m.san[0] : m.san.startsWith('O') ? 'K' : 'P';
       next.push(m.to);
     }
     frontier = next;
