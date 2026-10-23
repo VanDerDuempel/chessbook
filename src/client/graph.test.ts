@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../db';
 import { START_KEY } from '../core';
-import { layout, renderGraph, NODE_W } from './graph';
+import { layout, renderGraph, keysInRect, NODE_W, NODE_H } from './graph';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 
 const fresh = () => new Store(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbg-')), 't.db'));
@@ -46,4 +46,18 @@ test('renderGraph: markierte Knoten bekommen die Klasse sel, andere nicht', () =
   const cls = (k: string) => { const i = svg.indexOf(`data-k="${k}"`); return svg.slice(svg.lastIndexOf('<g class="', i) + 10, i - 2).split(' '); };
   assert.ok(cls(a).includes('sel')); assert.deepEqual(cls(b).filter(c => c === 'cur' || c === 'sel'), ['cur', 'sel']);
   assert.ok(!cls(st.moves[START_KEY][0].to).includes('sel'));
+});
+
+test('keysInRect: berührte Knoten zählen, Ecken in beliebiger Reihenfolge', () => {
+  const s = fresh();
+  play(s, 'e4', 'e5', 'Nf3'); play(s, 'e4', 'c5'); play(s, 'd4', 'd5');
+  const L = layout(s.state('white')), all = Object.keys(L.pos).sort();
+  const [a, b] = Object.keys(L.pos).sort((x, y) => L.pos[x].x - L.pos[y].x || L.pos[x].y - L.pos[y].y);
+  const p = L.pos[a];
+  assert.deepEqual(keysInRect(L, -1e4, -1e4, 1e4, 1e4).sort(), all);
+  assert.deepEqual(keysInRect(L, 1e4, 1e4, -1e4, -1e4).sort(), all);
+  assert.deepEqual(keysInRect(L, p.x + 5, p.y + 5, p.x + 6, p.y + 6), [a]);
+  assert.deepEqual(keysInRect(L, p.x + NODE_W + 2, p.y + NODE_H + 2, p.x + NODE_W - 2, p.y + NODE_H - 2), [a]);
+  assert.ok(!keysInRect(L, p.x, p.y, p.x + 1, p.y + 1).includes(b));
+  assert.deepEqual(keysInRect(L, -50, -50, -10, -10), []);
 });

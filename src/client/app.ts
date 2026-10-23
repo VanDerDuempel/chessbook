@@ -5,7 +5,7 @@ import type { Key } from 'chessground/types';
 import { chessgroundDests } from 'chessops/compat';
 import { parseSquare } from 'chessops/util';
 import { fromFen, START_KEY } from '../core';
-import { layout, renderGraph, miniBoard, sanHtml, type Layout } from './graph';
+import { layout, renderGraph, miniBoard, sanHtml, keysInRect, type Layout } from './graph';
 import type { State, Shape, Rep } from '../db';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
@@ -187,15 +187,52 @@ function zoomTo(z: number, mx: number, my: number) {
 }
 let pan: { x: number; y: number; l: number; t: number } | null = null, moved = false;
 G.addEventListener('wheel', e => { e.preventDefault(); hidePv(); const r = G.getBoundingClientRect(); zoomTo(zoom * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
-G.addEventListener('pointerdown', e => { hidePv(); if (e.button) return; pan = { x: e.clientX, y: e.clientY, l: G.scrollLeft, t: G.scrollTop }; moved = false; });
+G.addEventListener('pointerdown', e => {
+  hidePv(); if (e.button) return; moved = false;
+  if (e.ctrlKey || e.metaKey) { const p = toGraph(e.clientX, e.clientY); if (p) lasso = { x: p.x, y: p.y, sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, id: e.pointerId, hit: new Set() }; return; }
+  pan = { x: e.clientX, y: e.clientY, l: G.scrollLeft, t: G.scrollTop };
+});
 G.addEventListener('pointermove', e => {
+  if (lasso) { moveLasso(e); return; }
   if (!pan) return;
   const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
   if (!moved && Math.hypot(dx, dy) > 4) { moved = true; G.classList.add('pan'); try { G.setPointerCapture(e.pointerId); } catch { /* ignorieren */ } }
   if (moved) { G.scrollLeft = pan.l - dx; G.scrollTop = pan.t - dy; }
 });
 const endPan = () => { pan = null; G.classList.remove('pan'); };
-G.addEventListener('pointerup', endPan); G.addEventListener('pointercancel', endPan);
+G.addEventListener('pointerup', () => { if (lasso && moved) { lasso.hit.forEach(k => marked.add(k)); } endLasso(); endPan(); });
+G.addEventListener('pointercancel', () => { endLasso(); endPan(); });
+
+// Rechteck-Auswahl: Strg/Cmd+Ziehen fügt alle berührten Knoten zur Markierung hinzu, Escape bricht ab
+let lasso: { x: number; y: number; sx: number; sy: number; cx: number; cy: number; id: number; hit: Set<string>; el?: SVGRectElement } | null = null;
+const toGraph = (cx: number, cy: number) => { const r = G.querySelector('svg')?.getBoundingClientRect(); return r ? { x: (cx - r.left) / zoom, y: (cy - r.top) / zoom } : null; };
+function moveLasso(e: PointerEvent) {
+  const l = lasso!; l.cx = e.clientX; l.cy = e.clientY;
+  if (!moved && Math.hypot(l.cx - l.sx, l.cy - l.sy) <= 4) return;
+  if (!moved) { moved = true; G.classList.add('lasso'); try { G.setPointerCapture(l.id); } catch { /* ignorieren */ } requestAnimationFrame(lassoTick); }
+  drawLasso();
+}
+function drawLasso() {
+  const l = lasso!, sv = G.querySelector('svg'), p = toGraph(l.cx, l.cy); if (!sv || !p) return;
+  if (!l.el?.isConnected) { l.el = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); l.el.setAttribute('class', 'lasso'); sv.appendChild(l.el); }
+  const a = { x: Math.min(l.x, p.x), y: Math.min(l.y, p.y), width: Math.abs(p.x - l.x), height: Math.abs(p.y - l.y) };
+  for (const [n, v] of Object.entries(a)) l.el.setAttribute(n, String(v));
+  l.hit = new Set(keysInRect(L, l.x, l.y, p.x, p.y)); showMarks(l.hit);
+}
+// Am Rand von #graph scrollt die Ansicht mit
+function lassoTick() {
+  if (!lasso) return;
+  const r = G.getBoundingClientRect(), d = (c: number, lo: number, hi: number) => c < lo + 30 ? -12 : c > hi - 30 ? 12 : 0;
+  const dx = d(lasso.cx, r.left, r.right), dy = d(lasso.cy, r.top, r.bottom);
+  if (dx || dy) { G.scrollLeft += dx; G.scrollTop += dy; drawLasso(); }
+  requestAnimationFrame(lassoTick);
+}
+function endLasso() {
+  if (!lasso) return;
+  lasso.el?.remove(); try { G.releasePointerCapture(lasso.id); } catch { /* ignorieren */ }
+  lasso = null; G.classList.remove('lasso'); showMarks();
+}
+addEventListener('keydown', e => { if (e.key === 'Escape' && lasso) { e.stopImmediatePropagation(); moved = true; endLasso(); } }, true);
 // Strg/Cmd+Klick markiert, normaler Klick navigiert und hebt die Markierung auf
 G.addEventListener('click', e => {
   if (moved) { moved = false; return; }
@@ -203,9 +240,10 @@ G.addEventListener('click', e => {
   if (e.ctrlKey || e.metaKey) { if (!marked.delete(k)) marked.add(k); } else marked.clear();
   showMarks(); if (!e.ctrlKey && !e.metaKey) go(k);
 });
-function showMarks() {
-  G.querySelectorAll('.n').forEach(n => n.classList.toggle('sel', marked.has(n.getAttribute('data-k')!)));
-  $('#info').textContent = `${Object.keys(S.positions).length - 1} Stellungen` + (marked.size ? ` · ${marked.size} markiert` : '');
+function showMarks(extra?: Set<string>) {
+  G.querySelectorAll('.n').forEach(n => { const k = n.getAttribute('data-k')!; n.classList.toggle('sel', marked.has(k) || !!extra?.has(k)); });
+  const n = extra ? new Set([...marked, ...extra]).size : marked.size;
+  $('#info').textContent = `${Object.keys(S.positions).length - 1} Stellungen` + (n ? ` · ${n} markiert` : '');
 }
 function clearMarks() { if (marked.size) { marked.clear(); showMarks(); } }
 
@@ -214,7 +252,7 @@ const PV = document.createElement('div'); PV.className = 'pv'; PV.hidden = true;
 let pvKey: string | null = null;
 function hidePv() { PV.hidden = true; pvKey = null; }
 G.addEventListener('mousemove', e => {
-  const k = pan ? null : attr(e.target as Element, 'data-k');
+  const k = pan || lasso ? null : attr(e.target as Element, 'data-k');
   if (!k || !S.positions[k]) { hidePv(); return; }
   if (pvKey !== k) { pvKey = k; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}</div>`; }
   let x = e.clientX + 18, y = e.clientY + 18;

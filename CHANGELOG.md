@@ -6,6 +6,7 @@ Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 
 ### Neu
 - Mehrere Züge im Graphen markieren (Strg+Klick, am Mac Cmd+Klick) und per Rechtsklick gemeinsam löschen. Escape oder ein normaler Klick hebt die Markierung auf.
+- Rechteck-Auswahl im Graphen: Strg+Ziehen (am Mac Cmd+Ziehen) fügt alle Knoten, die das Rechteck berühren, zur Markierung hinzu. Escape bricht ab, am Rand scrollt die Ansicht mit.
 - Import im Dialog „Daten“: Ziel wählbar. Ein PGN geht wahlweise nach Weiß oder Schwarz, aus einem JSON-Export lassen sich beide oder nur ein Repertoire übernehmen.
 
 ### Geändert

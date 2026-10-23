@@ -63,7 +63,7 @@ cg-board{background:url(boards/wood.png) 0 0/100% 100%}
 #gwrap{position:relative;flex:1;min-height:440px}
 #graph{position:absolute;inset:0;overflow:auto;background-color:var(--panel);background-image:radial-gradient(var(--dot) 1.2px,transparent 1.2px);background-size:20px 20px;border:1px solid var(--bd);border-radius:16px;box-shadow:var(--shadow);padding:10px;scrollbar-width:none;cursor:grab;user-select:none}
 #graph::-webkit-scrollbar{display:none}
-#graph.pan{cursor:grabbing}
+#graph.pan{cursor:grabbing}#graph.lasso{cursor:crosshair}
 #graph svg{display:block;animation:gfade .2s ease}
 @keyframes gfade{from{opacity:.35}to{opacity:1}}
 .empty{height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:20px}
@@ -76,6 +76,7 @@ cg-board{background:url(boards/wood.png) 0 0/100% 100%}
 .n.cur rect{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
 /* Markiert (Strg/Cmd+Klick): eigene Farbe, gestrichelt; bei der aktuellen Stellung bleibt deren Füllung */
 .n.sel rect{fill:var(--sel-soft);stroke:var(--sel);stroke-width:2.5;stroke-dasharray:5 3}.n.cur.sel rect{fill:var(--accent-soft)}
+.lasso{fill:var(--accent);fill-opacity:.15;stroke:var(--accent);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
 .n text{font-size:14px;font-weight:600;fill:var(--text)}
 .n foreignObject{pointer-events:none;overflow:visible}
 .lab{display:flex;align-items:center;height:100%;font-size:14px;font-weight:600;white-space:nowrap;color:var(--text)}

@@ -52,6 +52,12 @@ export function layout(st: State): Layout {
   return L;
 }
 
+/** Knoten, die das Rechteck (Graph-Koordinaten, Ecken beliebig) berühren oder darin liegen. */
+export function keysInRect(L: Layout, x0: number, y0: number, x1: number, y1: number): string[] {
+  const l = Math.min(x0, x1), r = Math.max(x0, x1), t = Math.min(y0, y1), b = Math.max(y0, y1);
+  return Object.keys(L.pos).filter(k => { const p = L.pos[k]; return p.x <= r && p.x + NODE_W >= l && p.y <= b && p.y + NODE_H >= t; });
+}
+
 /** Figurinen-Notation: statt des Buchstabens (N, B, R, Q, K) steht das Figurensymbol vor dem Zielfeld. */
 export function sanHtml(side: 'w' | 'b', san: string): string {
   const m = /^([KQRBN])(.*)$/.exec(san);
