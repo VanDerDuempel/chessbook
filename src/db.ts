@@ -112,15 +112,17 @@ export class Store {
     return this.insertPlayed(rep, from, p);
   }
 
-  /** Löscht die Stellung und alles, was danach von der Startstellung aus nicht mehr erreichbar ist. */
-  deleteNode(rep: Rep, key: string, dry = false) {
-    if (key === START_KEY) throw new Error('Die Startstellung kann nicht gelöscht werden');
+  /** Löscht die Stellungen und alles, was danach von der Startstellung aus nicht mehr erreichbar ist. */
+  deleteNodes(rep: Rep, keys: string[], dry = false) {
+    if (!keys.length) throw new Error('Keine Stellung zum Löschen angegeben');
+    const drop = new Set(keys);
+    if (drop.has(START_KEY)) throw new Error('Die Startstellung kann nicht gelöscht werden');
     const adj = new Map<string, string[]>();
     for (const e of this.db.prepare('SELECT from_key f,to_key t FROM moves WHERE repertoire=?').all(rep) as { f: string; t: string }[])
       (adj.get(e.f) ?? adj.set(e.f, []).get(e.f)!).push(e.t);
     const seen = new Set([START_KEY]);
     const stack = [START_KEY];
-    while (stack.length) for (const t of adj.get(stack.pop()!) ?? []) if (t !== key && !seen.has(t)) { seen.add(t); stack.push(t); }
+    while (stack.length) for (const t of adj.get(stack.pop()!) ?? []) if (!drop.has(t) && !seen.has(t)) { seen.add(t); stack.push(t); }
     const dead = (this.db.prepare('SELECT key FROM positions WHERE repertoire=?').all(rep) as { key: string }[])
       .map(r => r.key).filter(k => !seen.has(k));
     if (!dry && dead.length) {

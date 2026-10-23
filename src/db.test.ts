@@ -35,17 +35,39 @@ test('Löschen entfernt nur, was unerreichbar wird (B/C/D-Beispiel)', () => {
   play(s, 'e4', 'e5', 'Nf3', 'Nc6');
   play(s, 'Nf3', 'Nc6', 'e4', 'e5');
   const x = play(s, 'e4', 'e5', 'Nf3');
-  assert.deepEqual(s.deleteNode('white', x, true), { removed: 1 });
-  assert.equal(s.deleteNode('white', x).removed, 1);
+  assert.deepEqual(s.deleteNodes('white', [x], true), { removed: 1 });
+  assert.equal(s.deleteNodes('white', [x]).removed, 1);
   assert.ok(Object.keys(s.state('white').positions).length === 7); // Ziel bleibt über anderen Weg erhalten
   const first = play(s, 'Nf3');
-  assert.equal(s.deleteNode('white', first).removed, 4);
+  assert.equal(s.deleteNodes('white', [first]).removed, 4);
   assert.equal(count(s), 3);
+});
+
+test('Mehrere Stellungen gemeinsam löschen', () => {
+  const s = fresh();
+  play(s, 'e4', 'e5', 'Nf3');
+  play(s, 'e4', 'c5', 'Nf3');
+  const keep = play(s, 'd4', 'd5', 'c4'); // über d4 erreichbar ...
+  play(s, 'c4', 'd5', 'd4'); // ... und über c4
+  const st = s.state('white');
+  const e4 = st.moves[START_KEY][0].to;
+  const [e5, c5] = st.moves[e4].map(m => m.to);
+  const c4 = st.moves[START_KEY][2].to;
+  assert.equal(count(s), 11);
+  assert.deepEqual(s.deleteNodes('white', [e5, c5, e5], true), { removed: 4 });
+  assert.equal(count(s), 11);
+  assert.equal(s.deleteNodes('white', [e5, c5]).removed, 4);
+  const pos = s.state('white').positions;
+  assert.ok(pos[e4] && !pos[e5] && !pos[c5]);
+  assert.equal(s.deleteNodes('white', [c4]).removed, 2); // c4 und c4-d5, die Zielstellung bleibt über d4
+  assert.ok(s.state('white').positions[keep]);
+  assert.throws(() => s.deleteNodes('white', []));
+  assert.throws(() => s.deleteNodes('white', [e4, START_KEY]));
 });
 
 test('Startstellung lässt sich nicht löschen, illegale Züge werden abgelehnt', () => {
   const s = fresh();
-  assert.throws(() => s.deleteNode('white', START_KEY));
+  assert.throws(() => s.deleteNodes('white', [START_KEY]));
   assert.throws(() => s.addMove('white', START_KEY, 'e2e5'));
 });
 

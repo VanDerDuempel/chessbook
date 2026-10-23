@@ -89,7 +89,7 @@ const server = http.createServer(async (req, res) => {
       if (!(req.headers['content-type'] ?? '').includes('application/json')) return send(res, 415, { error: 'Nur JSON erlaubt' });
       const b = await readBody(req);
       if (req.method === 'POST' && p === '/api/move') return send(res, 200, store.addMove(rep(b.rep), String(b.from), String(b.uci)));
-      if (req.method === 'POST' && p === '/api/delete') return send(res, 200, store.deleteNode(rep(b.rep), String(b.key), !!b.dry));
+      if (req.method === 'POST' && p === '/api/delete') return send(res, 200, store.deleteNodes(rep(b.rep), Array.isArray(b.keys) ? b.keys.map(String) : [String(b.key)], !!b.dry));
       if (req.method === 'PUT' && p === '/api/gaps-config') { config = patchConfig(config, b); saveConfig(CONFIG_FILE, config); return send(res, 200, publicConfig()); }
       if (req.method === 'POST' && p === '/api/gaps/scan') return send(res, 200, startScan(rep(b.rep)));
       if (req.method === 'POST' && p === '/api/move-san') return send(res, 200, store.addSan(rep(b.rep), String(b.from), String(b.san)));
