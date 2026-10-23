@@ -6,6 +6,7 @@ import { chessgroundDests } from 'chessops/compat';
 import { parseSquare } from 'chessops/util';
 import { fromFen, playUci, START_KEY } from '../core';
 import { layout, renderGraph, miniBoard, sanHtml, keysInRect, NODE_W, NODE_H, type Layout } from './graph';
+import { openMoves, markDone } from './train';
 import type { State, Shape, Rep } from '../db';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
@@ -19,8 +20,9 @@ let pending: { keys: string[]; n: number } | null = null;
 let marked = new Set<string>();
 let promo: { from: string; to: string; color: string } | null = null;
 let settingShapes = false;
-// Training: Ausgangsstellung, Zähler, Fehler in dieser Stellung, Lösung zeigen, besuchte Stellungen und gespielte Züge der Variante, Timer
-let tr: { start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; t: number } | null = null;
+// Training: Ausgangsstellung, Zähler, Fehler in dieser Stellung, Lösung zeigen, besuchte Stellungen (in Zugreihenfolge) und gespielte Züge der Variante,
+// Variante bisher fehlerfrei, erledigte Stellungen dieser Runde, Timer
+let tr: { start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; t: number } | null = null;
 const flips: Record<Rep, boolean> = { white: false, black: false };
 try { Object.assign(flips, JSON.parse(localStorage.getItem('cbflip') ?? '{}')); } catch { /* ignorieren */ }
 const orientation = (): Rep => (flips[rep] ? (rep === 'white' ? 'black' : 'white') : rep);
@@ -350,13 +352,14 @@ split.addEventListener('dblclick', () => { setBw(null); try { localStorage.remov
 
 // ---------- Training (Repertoire abfragen)
 // Der Gegner spielt zufällig einen seiner Repertoirezüge, man selbst muss einen eigenen finden.
-// Am Ende einer Variante geht es zurück zur Ausgangsstellung. Nichts wird gespeichert.
+// Am Ende einer Variante geht es zurück zur Ausgangsstellung. Fehlerfrei gespielte Varianten kommen in dieser Runde nicht wieder,
+// sind alle geschafft, beginnt eine neue Runde. Nichts wird gespeichert.
 function toggleTrain() { if (tr) stopTrain(); else startTrain(); }
 function startTrain() {
   const start = S.moves[cur]?.length ? cur : S.root;
   if (!S.moves[start]?.length) { toast('Noch keine Züge im Repertoire'); return; }
   CM.hidden = true; marked.clear(); pending = null; promo = null;
-  tr = { start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), t: 0 };
+  tr = { start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), t: 0 };
   document.body.classList.add('train');
   if (start !== cur) { stack.push(cur); fwd = []; cur = start; }
   refresh(); trStep();
@@ -368,8 +371,16 @@ function stopTrain() {
 function trStep() {
   const t = tr; if (!t) return;
   const ms = (S.moves[cur] ?? []).filter(m => !t.seen.has(m.to));
-  if (!ms.length) { flash('done'); t.t = window.setTimeout(trRestart, 900); return; }
-  if (fromFen(S.positions[cur].fen).turn !== rep) t.t = window.setTimeout(() => { const m = ms[Math.floor(Math.random() * ms.length)]; trGo(m.to, m.san); }, 450);
+  if (!ms.length) {
+    if (t.clean) markDone(S, rep, [...t.seen], t.done);
+    const all = t.done.has(t.start);
+    if (all) { t.done.clear(); toast('Alle Varianten geschafft · neue Runde'); }
+    flash('done'); t.t = window.setTimeout(trRestart, all ? 1600 : 900); return;
+  }
+  if (fromFen(S.positions[cur].fen).turn !== rep) {
+    const c = openMoves(S, cur, t.seen, t.done);
+    t.t = window.setTimeout(() => { const m = c[Math.floor(Math.random() * c.length)]; trGo(m.to, m.san); }, 450);
+  }
 }
 function trGo(k: string, san: string) {
   const t = tr; if (!t) return;
@@ -377,7 +388,7 @@ function trGo(k: string, san: string) {
 }
 function trRestart() {
   const t = tr; if (!t) return;
-  t.seen = new Set([t.start]); t.line = pathTo(t.start); t.miss = t.hint = false; fwd = [];
+  t.seen = new Set([t.start]); t.line = pathTo(t.start); t.miss = t.hint = false; t.clean = true; fwd = [];
   if (cur !== t.start) { stack.push(cur); setCur(t.start); } else refresh();
   trStep();
 }
@@ -385,7 +396,7 @@ function trMove(uci: string) {
   const t = tr!, p = playUci(fromFen(S.positions[cur].fen), uci);
   const m = p && S.moves[cur]?.find(x => x.uci === p.uci);
   if (m) { if (!t.miss) t.ok++; flash('ok'); trGo(m.to, m.san); return; }
-  if (!t.miss) { t.bad++; t.miss = true; }
+  if (!t.miss) { t.bad++; t.miss = true; t.clean = false; }
   t.hint = true; flash('bad'); refresh();
 }
 function flash(c: 'ok' | 'bad' | 'done') {
