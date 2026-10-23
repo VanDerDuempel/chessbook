@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../db';
 import { START_KEY } from '../core';
-import { layout, NODE_W } from './graph';
+import { layout, renderGraph, NODE_W } from './graph';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 
 const fresh = () => new Store(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbg-')), 't.db'));
@@ -36,4 +36,14 @@ test('Layout: doppelte Kanten zwischen denselben Stellungen erzeugen kein Transp
   const from = Object.keys(st.moves).find(k => st.moves[k].some(m => m.to === a))!;
   st.moves[from].push({ ...st.moves[from].find(m => m.to === a)!, uci: 'x' });
   assert.equal(layout(st).incoming[a], 1);
+});
+
+test('renderGraph: markierte Knoten bekommen die Klasse sel, andere nicht', () => {
+  const s = fresh();
+  const a = play(s, 'e4', 'e5'), b = play(s, 'd4');
+  const st = s.state('white'), L = layout(st);
+  const svg = renderGraph(L, st, b, 1, undefined, new Set([a, b]));
+  const cls = (k: string) => { const i = svg.indexOf(`data-k="${k}"`); return svg.slice(svg.lastIndexOf('<g class="', i) + 10, i - 2).split(' '); };
+  assert.ok(cls(a).includes('sel')); assert.deepEqual(cls(b).filter(c => c === 'cur' || c === 'sel'), ['cur', 'sel']);
+  assert.ok(!cls(st.moves[START_KEY][0].to).includes('sel'));
 });

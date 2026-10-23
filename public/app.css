@@ -1,6 +1,6 @@
-:root{--sq-light:#c7a773;--sq-dark:#7c5431;--bg:#f3f4f6;--panel:#fff;--panel2:#eceef2;--nw:#fff;--nb:#e9ecf1;--text:#1a1c20;--muted:#6b7280;--accent:#3b6fd8;--accent-soft:#e3ebfc;--bd:#dfe2e8;--edge:#9aa1ad;--dot:#d5d9e0;--danger:#d64545;--warn:#fdf3e1;--shadow:0 1px 2px rgba(20,24,34,.06),0 8px 24px rgba(20,24,34,.08);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1012;--panel:#17181b;--panel2:#202226;--nw:#2b2e35;--nb:#17181b;--text:#e8e9ec;--muted:#8b909a;--accent:#6c9cf6;--accent-soft:#25324d;--bd:#2a2d33;--edge:#555b66;--dot:#23262b;--danger:#f0716b;--warn:#2b2417;--shadow:0 1px 2px rgba(5,6,8,.5),0 10px 30px rgba(5,6,8,.45)}}
-:root[data-theme="dark"]{--bg:#0f1012;--panel:#17181b;--panel2:#202226;--nw:#2b2e35;--nb:#17181b;--text:#e8e9ec;--muted:#8b909a;--accent:#6c9cf6;--accent-soft:#25324d;--bd:#2a2d33;--edge:#555b66;--dot:#23262b;--danger:#f0716b;--warn:#2b2417;--shadow:0 1px 2px rgba(5,6,8,.5),0 10px 30px rgba(5,6,8,.45)}
+:root{--sq-light:#c7a773;--sq-dark:#7c5431;--bg:#f3f4f6;--panel:#fff;--panel2:#eceef2;--nw:#fff;--nb:#e9ecf1;--text:#1a1c20;--muted:#6b7280;--accent:#3b6fd8;--accent-soft:#e3ebfc;--bd:#dfe2e8;--edge:#9aa1ad;--dot:#d5d9e0;--danger:#d64545;--warn:#fdf3e1;--sel:#b4329f;--sel-soft:#f9e1f4;--shadow:0 1px 2px rgba(20,24,34,.06),0 8px 24px rgba(20,24,34,.08);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1012;--panel:#17181b;--panel2:#202226;--nw:#2b2e35;--nb:#17181b;--text:#e8e9ec;--muted:#8b909a;--accent:#6c9cf6;--accent-soft:#25324d;--bd:#2a2d33;--edge:#555b66;--dot:#23262b;--danger:#f0716b;--warn:#2b2417;--sel:#e77bd4;--sel-soft:#45213e;--shadow:0 1px 2px rgba(5,6,8,.5),0 10px 30px rgba(5,6,8,.45)}}
+:root[data-theme="dark"]{--bg:#0f1012;--panel:#17181b;--panel2:#202226;--nw:#2b2e35;--nb:#17181b;--text:#e8e9ec;--muted:#8b909a;--accent:#6c9cf6;--accent-soft:#25324d;--bd:#2a2d33;--edge:#555b66;--dot:#23262b;--danger:#f0716b;--warn:#2b2417;--sel:#e77bd4;--sel-soft:#45213e;--shadow:0 1px 2px rgba(5,6,8,.5),0 10px 30px rgba(5,6,8,.45)}
 *{box-sizing:border-box}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--text);font:14.5px/1.45 Inter,"Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
@@ -74,6 +74,8 @@ cg-board{background:url(boards/wood.png) 0 0/100% 100%}
 .n{cursor:pointer}.n rect{fill:var(--nb);stroke:var(--bd)}.n.w rect{fill:var(--nw)}
 .n.onpath rect{stroke:var(--accent)}
 .n.cur rect{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
+/* Markiert (Strg/Cmd+Klick): eigene Farbe, gestrichelt; bei der aktuellen Stellung bleibt deren Füllung */
+.n.sel rect{fill:var(--sel-soft);stroke:var(--sel);stroke-width:2.5;stroke-dasharray:5 3}.n.cur.sel rect{fill:var(--accent-soft)}
 .n text{font-size:14px;font-weight:600;fill:var(--text)}
 .n foreignObject{pointer-events:none;overflow:visible}
 .lab{display:flex;align-items:center;height:100%;font-size:14px;font-weight:600;white-space:nowrap;color:var(--text)}
