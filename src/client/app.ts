@@ -4,7 +4,7 @@ import type { DrawShape } from 'chessground/draw';
 import type { Key } from 'chessground/types';
 import { chessgroundDests } from 'chessops/compat';
 import { parseSquare } from 'chessops/util';
-import { fromFen, START_KEY } from '../core';
+import { fromFen, playUci, START_KEY } from '../core';
 import { layout, renderGraph, miniBoard, sanHtml, keysInRect, NODE_W, NODE_H, type Layout } from './graph';
 import type { State, Shape, Rep } from '../db';
 
@@ -19,6 +19,8 @@ let pending: { keys: string[]; n: number } | null = null;
 let marked = new Set<string>();
 let promo: { from: string; to: string; color: string } | null = null;
 let settingShapes = false;
+// Training: Ausgangsstellung, Zähler, Fehler in dieser Stellung, Lösung zeigen, besuchte Stellungen und gespielte Züge der Variante, Timer
+let tr: { start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; t: number } | null = null;
 const flips: Record<Rep, boolean> = { white: false, black: false };
 try { Object.assign(flips, JSON.parse(localStorage.getItem('cbflip') ?? '{}')); } catch { /* ignorieren */ }
 const orientation = (): Rep => (flips[rep] ? (rep === 'white' ? 'black' : 'white') : rep);
@@ -85,17 +87,19 @@ function lastMove(): [Key, Key] | undefined {
   return m ? [m.uci.slice(0, 2) as Key, m.uci.slice(2, 4) as Key] : undefined;
 }
 function syncBoard() {
-  const pos = fromFen(S.positions[cur].fen);
+  const pos = fromFen(S.positions[cur].fen), mine = !tr || pos.turn === rep;
   settingShapes = true;
   cg.set({
     fen: S.positions[cur].fen, orientation: orientation(), turnColor: pos.turn, check: pos.isCheck() ? pos.turn : false,
-    lastMove: lastMove(), movable: { color: pos.turn, dests: chessgroundDests(pos) as Map<Key, Key[]> },
+    lastMove: lastMove(), movable: { color: mine ? pos.turn : undefined, dests: (mine ? chessgroundDests(pos) : new Map()) as Map<Key, Key[]> },
   });
-  cg.setShapes(S.positions[cur].shapes.map(s => ({ orig: s.orig, dest: s.dest, brush: s.brush })) as DrawShape[]);
+  // Im Training keine gespeicherten Pfeile (sie verraten den Zug), nach einem Fehler die Lösung
+  const sh = !tr ? S.positions[cur].shapes : tr.hint ? (S.moves[cur] ?? []).map(m => ({ orig: m.uci.slice(0, 2), dest: m.uci.slice(2, 4), brush: 'green' })) : [];
+  cg.setShapes(sh.map(s => ({ orig: s.orig, dest: s.dest, brush: s.brush })) as DrawShape[]);
   settingShapes = false;
 }
 async function onShapes(shapes: DrawShape[]) {
-  if (settingShapes) return;
+  if (settingShapes || tr) return;
   const out: Shape[] = shapes.map(s => ({ orig: s.orig as string, ...(s.dest && s.dest !== s.orig ? { dest: s.dest as string } : {}), brush: s.brush ?? 'green' }));
   S.positions[cur].shapes = out;
   try { await api('/api/shapes', { rep, key: cur, shapes: out }, 'PUT'); } catch (e) { toast((e as Error).message); }
@@ -107,6 +111,7 @@ function onMove(orig: Key, dest: Key) {
   void play(orig + dest);
 }
 async function play(uci: string) {
+  if (tr) { trMove(uci); return; }
   try {
     const r = await api('/api/move', { rep, from: cur, uci });
     await load(); go(r.toKey);
@@ -126,7 +131,7 @@ $('#promo').onclick = e => {
 
 // ---------- Zugpfad, Info, Hinweise
 function drawPath() {
-  const el = $('#path'), p = pathTo(cur);
+  const el = $('#path'), p = tr ? tr.line : pathTo(cur);
   el.classList.toggle('start', !p.length);
   if (!p.length) { el.innerHTML = '<span class="mut">Startstellung</span>'; return; }
   const mv = (k: string, san: string, side: 'w' | 'b') => `<span class="pm${k === cur ? ' on' : ''}" data-k="${k}">${sanHtml(side, san)}</span>`;
@@ -254,7 +259,8 @@ G.addEventListener('click', e => {
 function showMarks(extra?: Set<string>) {
   G.querySelectorAll('.n').forEach(n => { const k = n.getAttribute('data-k')!; n.classList.toggle('sel', marked.has(k) || !!extra?.has(k)); });
   const n = extra ? new Set([...marked, ...extra]).size : marked.size;
-  $('#info').textContent = `${Object.keys(S.positions).length - 1} Stellungen` + (n ? ` · ${n} markiert` : '');
+  if (tr) { $('#info').innerHTML = `<b class="ok">✓ ${tr.ok}</b> <b class="bad">✗ ${tr.bad}</b>`; return; }
+  $('#info').textContent =`${Object.keys(S.positions).length - 1} Stellungen` + (n ? ` · ${n} markiert` : '');
 }
 function clearMarks() { if (marked.size) { marked.clear(); showMarks(); } }
 
@@ -294,9 +300,10 @@ function refresh() {
   $('#tw').className = rep === 'white' ? 'on' : ''; $('#tb').className = rep === 'black' ? 'on' : '';
   ($('#lic') as HTMLAnchorElement).href = lichessUrl();
   showMarks();
-  const atRoot = cur === S.root, nx = !!nextOf(cur);
+  const atRoot = cur === S.root || !!tr, nx = !!nextOf(cur) && !tr;
   ($('#n0') as HTMLButtonElement).disabled = ($('#n1') as HTMLButtonElement).disabled = atRoot;
   ($('#n2') as HTMLButtonElement).disabled = ($('#n3') as HTMLButtonElement).disabled = !nx;
+  $('#trn').classList.toggle('on', !!tr);
 }
 async function switchRep(r: Rep) { if (r === rep) { navStart(); return; } rep = r; cur = START_KEY; stack = []; fwd = []; pending = null; marked.clear(); await load(); await loadGapJob().catch(() => {}); refresh(); }
 function flipBoard() { flips[rep] = !flips[rep]; try { localStorage.setItem('cbflip', JSON.stringify(flips)); } catch { /* ignorieren */ } refresh(); }
@@ -306,7 +313,9 @@ $('#n0').onclick = navStart; $('#n1').onclick = navBack; $('#n2').onclick = navF
 $('#fl').onclick = flipBoard;
 addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName) || ($('#dlg') as HTMLDialogElement).open) return;
-  const f: Record<string, () => void> = { f: flipBoard, F: flipBoard, ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
+  const f: Record<string, () => void> = tr
+    ? { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, Escape: stopTrain }
+    : { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
   if (f[e.key]) { e.preventDefault(); f[e.key](); } else if (e.key === 'Escape') { CM.hidden = true; clearMarks(); }
 });
 addEventListener('resize', () => cg.redrawAll());
@@ -338,6 +347,51 @@ split.addEventListener('pointerdown', e => {
   split.addEventListener('pointermove', move); split.addEventListener('pointerup', up, { once: true });
 });
 split.addEventListener('dblclick', () => { setBw(null); try { localStorage.removeItem('cbbw'); } catch { /* ignorieren */ } });
+
+// ---------- Training (Repertoire abfragen)
+// Der Gegner spielt zufällig einen seiner Repertoirezüge, man selbst muss einen eigenen finden.
+// Am Ende einer Variante geht es zurück zur Ausgangsstellung. Nichts wird gespeichert.
+function toggleTrain() { if (tr) stopTrain(); else startTrain(); }
+function startTrain() {
+  const start = S.moves[cur]?.length ? cur : S.root;
+  if (!S.moves[start]?.length) { toast('Noch keine Züge im Repertoire'); return; }
+  CM.hidden = true; marked.clear(); pending = null; promo = null;
+  tr = { start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), t: 0 };
+  document.body.classList.add('train');
+  if (start !== cur) { stack.push(cur); fwd = []; cur = start; }
+  refresh(); trStep();
+}
+function stopTrain() {
+  if (!tr) return;
+  clearTimeout(tr.t); tr = null; document.body.classList.remove('train'); refresh();
+}
+function trStep() {
+  const t = tr; if (!t) return;
+  const ms = (S.moves[cur] ?? []).filter(m => !t.seen.has(m.to));
+  if (!ms.length) { flash('done'); t.t = window.setTimeout(trRestart, 900); return; }
+  if (fromFen(S.positions[cur].fen).turn !== rep) t.t = window.setTimeout(() => { const m = ms[Math.floor(Math.random() * ms.length)]; trGo(m.to, m.san); }, 450);
+}
+function trGo(k: string, san: string) {
+  const t = tr; if (!t) return;
+  t.seen.add(k); t.line.push([k, san]); t.miss = t.hint = false; go(k); trStep();
+}
+function trRestart() {
+  const t = tr; if (!t) return;
+  t.seen = new Set([t.start]); t.line = pathTo(t.start); t.miss = t.hint = false; fwd = [];
+  if (cur !== t.start) { stack.push(cur); setCur(t.start); } else refresh();
+  trStep();
+}
+function trMove(uci: string) {
+  const t = tr!, p = playUci(fromFen(S.positions[cur].fen), uci);
+  const m = p && S.moves[cur]?.find(x => x.uci === p.uci);
+  if (m) { if (!t.miss) t.ok++; flash('ok'); trGo(m.to, m.san); return; }
+  if (!t.miss) { t.bad++; t.miss = true; }
+  t.hint = true; flash('bad'); refresh();
+}
+function flash(c: 'ok' | 'bad' | 'done') {
+  const el = $('#bw'); el.classList.remove('ok', 'bad', 'done'); void el.offsetWidth; el.classList.add(c);
+}
+$('#trn').onclick = toggleTrain;
 
 // ---------- Daten (Export und Import)
 const dlg = $<HTMLDialogElement>('#dlg'), txt = $<HTMLTextAreaElement>('#txt');

@@ -2,6 +2,11 @@
 
 Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 
+## 2026-10-24
+
+### Neu
+- Training: Das Repertoire wird ab der aktuellen Stellung abgefragt. Der Gegner zieht zufällig aus dem Repertoire, falsche eigene Züge zählen als Fehler und zeigen die Lösung als Pfeil. Zähler für richtige und falsche Züge, Neustart am Ende jeder Variante. Taste T, Escape beendet.
+
 ## 2026-10-23
 
 ### Neu
