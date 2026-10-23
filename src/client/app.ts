@@ -312,10 +312,10 @@ addEventListener('keydown', e => {
 addEventListener('resize', () => cg.redrawAll());
 // Ziehgriff: Brettbreite (Spalte links) per Maus, gespeichert; Doppelklick setzt zurück
 const top = $('.top'), split = $('#split');
-// Größte Spaltenbreite, bei der Brett, Navigation und Leiste noch ins Fenster passen
+// Größte Spaltenbreite, bei der das Brett selbst noch ganz ins Fenster passt
 function maxBw() {
-  const b = $('#board').getBoundingClientRect(), bar = $('.bar').getBoundingClientRect(), c = $('.top .card').getBoundingClientRect();
-  return innerHeight - (b.top + scrollY) - (bar.bottom - b.bottom) - 15 - 28 + (c.width - b.width);
+  const b = $('#board').getBoundingClientRect(), c = $('.top .card').getBoundingClientRect();
+  return innerHeight - (b.top + scrollY) - 12 + (c.width - b.width);
 }
 let bwWant: number | null = null;
 const setBw = (w: number | null) => {
