@@ -17,8 +17,9 @@ button:hover:not(:disabled){background:var(--panel2)}
 button:active:not(:disabled){transform:translateY(1px)}
 button:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button:disabled{opacity:.35;cursor:default}
-.btn,button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-.btn:hover,button.primary:hover:not(:disabled){filter:brightness(1.1);background:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn:hover{background:var(--panel2)}
+button.primary:hover:not(:disabled){filter:brightness(1.1);background:var(--accent)}
 #th{padding:8px 10px;color:var(--muted)}#th:hover:not(:disabled){color:var(--text)}
 .top{display:grid;grid-template-columns:minmax(0,640px) minmax(280px,1fr);gap:24px;align-items:stretch}
 section{min-width:0;display:flex;flex-direction:column}
@@ -49,7 +50,7 @@ cg-board{background:url(boards/wood.png) 0 0/100% 100%}
 .nav button{flex:1;padding:9px 0;color:var(--muted);background:var(--panel2);border-color:transparent}
 .nav button:hover:not(:disabled){color:var(--text);background:var(--bd)}
 .mut{color:var(--muted)}
-#path{position:relative;margin-top:12px;display:flex;flex-wrap:nowrap;align-items:center;gap:12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;background:var(--panel2);border-radius:12px;padding:10px 12px;font-size:14.5px;font-variant-numeric:tabular-nums;min-height:44px}
+#path{position:relative;border:1px solid transparent;margin-top:12px;display:flex;flex-wrap:nowrap;align-items:center;gap:12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;background:var(--panel2);border-radius:12px;padding:10px 12px;font-size:14.5px;font-variant-numeric:tabular-nums;min-height:44px}
 #path::-webkit-scrollbar{display:none}
 .pr{flex:none;display:inline-flex;align-items:center;white-space:nowrap}
 .mn{color:var(--muted);margin-right:3px}
@@ -179,3 +180,18 @@ dialog .drop textarea{display:block;height:140px;border:0;border-radius:0;backgr
 .okbox .ph b{color:var(--ok)}.okbox .ph>i{width:18px;height:18px;flex:none;border-radius:50%;background:var(--ok);color:var(--panel);font-style:normal;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center}
 #dm .note{margin-top:16px}
 .okbox .kpis{grid-template-columns:repeat(4,1fr)}@media(max-width:520px){.okbox .kpis{grid-template-columns:1fr 1fr}}
+/* Leiste unter dem Brett: Knöpfe mit Symbol */
+.bar .btn svg,.bar button svg{flex:none}
+.bar .btn,#dat,#gap{gap:7px;color:var(--text)}
+.bar .btn svg,#dat svg,#gap svg{color:var(--muted)}
+.bar .btn:hover svg,#dat:hover svg,#gap:hover svg{color:var(--accent)}
+/* Zugpfad in der Startstellung: dezenter Hinweis statt Eingabefeld-Optik */
+#path.start{background:transparent;border:1px dashed var(--bd);font-size:13.5px}
+/* Schwarze Figurensymbole im Dunkelmodus mit heller Kontur */
+[data-theme="dark"] :is(.lab,.pm,.mv,.gi) img[src^="pieces/b"]{filter:drop-shadow(0 0 .6px rgba(255,255,255,.95)) drop-shadow(0 0 .6px rgba(255,255,255,.95))}
+/* Brettkoordinaten: größer, kräftiger, in Holzfarben */
+.cg-wrap coords{font-size:12px;font-weight:700;opacity:1;font-family:inherit}
+.cg-wrap coords.files{text-transform:none}
+/* Ränge stehen links (a- bzw. h-Linie): jeweils die Gegenfarbe des Feldes */
+.cg-wrap.orientation-white .ranks :nth-child(even),.cg-wrap.orientation-white .files :nth-child(even),.cg-wrap.orientation-black .ranks :nth-child(odd),.cg-wrap.orientation-black .files :nth-child(odd){color:#5b3a1d}
+.cg-wrap.orientation-white .ranks :nth-child(odd),.cg-wrap.orientation-white .files :nth-child(odd),.cg-wrap.orientation-black .ranks :nth-child(even),.cg-wrap.orientation-black .files :nth-child(even){color:#f3e3c3}

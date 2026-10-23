@@ -127,7 +127,8 @@ $('#promo').onclick = e => {
 // ---------- Zugpfad, Info, Hinweise
 function drawPath() {
   const el = $('#path'), p = pathTo(cur);
-  if (!p.length) { el.innerHTML = '<span class="mut">Startstellung</span>'; return; }
+  el.classList.toggle('start', !p.length);
+  if (!p.length) { el.innerHTML = '<span class="mut">Startstellung · zieh eine Figur, um eine Variante anzulegen</span>'; return; }
   const mv = (k: string, san: string, side: 'w' | 'b') => `<span class="pm${k === cur ? ' on' : ''}" data-k="${k}">${sanHtml(side, san)}</span>`;
   let h = '';
   for (let i = 0; i < p.length; i += 2) h += `<span class="pr"><span class="mn">${i / 2 + 1}.</span>${mv(p[i][0], p[i][1], 'w')}${p[i + 1] ? mv(p[i + 1][0], p[i + 1][1], 'b') : ''}</span>`;
