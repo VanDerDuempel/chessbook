@@ -157,7 +157,15 @@ async function askDelete(key: string) {
   } catch (e) { toast((e as Error).message); }
 }
 async function doDelete(key: string) {
-  try { await api('/api/delete', { rep, key }); pending = null; fwd = []; await load(); refresh(); } catch (e) { toast((e as Error).message); }
+  // Fällt die aktuelle Stellung weg, zum Vorgänger des gelöschten Zugs springen (sonst nächster erhaltener Vorfahre)
+  const cand = [cur, prevOf(key)];
+  for (let x = L.parent[cur]; x !== undefined; x = L.parent[x]) cand.push(x);
+  try {
+    await api('/api/delete', { rep, key }); pending = null; fwd = [];
+    const keep = cur; await load();
+    if (!S.positions[keep]) cur = cand.find(k => k !== undefined && S.positions[k]) ?? S.root;
+    refresh();
+  } catch (e) { toast((e as Error).message); }
 }
 
 // ---------- Graph
