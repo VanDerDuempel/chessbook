@@ -39,7 +39,8 @@ function startScan(rep: Rep): Job {
     const cached = store.cacheGet(key, cfgKey, maxAge);
     if (cached) return cached;
     try {
-      const d = await client.query(fen, p => { job.indexing = p; });
+      // Einlese-Fortschritt gibt es nur beim Spieler-Explorer; bei Masters/Lichess nicht anzeigen
+      const d = await client.query(fen, job.source === 'player' ? p => { job.indexing = p; } : undefined);
       store.cachePut(key, cfgKey, d);
       return d;
     } finally { job.indexing = null; }
