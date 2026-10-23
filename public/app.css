@@ -191,7 +191,8 @@ dialog .drop textarea{display:block;height:140px;border:0;border-radius:0;backgr
 [data-theme="dark"] :is(.lab,.pm,.mv,.gi) img[src^="pieces/b"]{filter:drop-shadow(0 0 .6px rgba(255,255,255,.95)) drop-shadow(0 0 .6px rgba(255,255,255,.95))}
 /* Brettkoordinaten: größer, kräftiger, in Holzfarben */
 .cg-wrap coords{font-size:12px;font-weight:700;opacity:1;font-family:inherit}
-.cg-wrap coords.files{text-transform:none}
+.cg-wrap coords.files{text-transform:none;left:0;bottom:3px;height:auto;line-height:1}
+.cg-wrap coords.files coord{text-align:right;padding-right:4px}
 /* Ränge stehen links (a- bzw. h-Linie): jeweils die Gegenfarbe des Feldes */
 .cg-wrap.orientation-white .ranks :nth-child(even),.cg-wrap.orientation-white .files :nth-child(even),.cg-wrap.orientation-black .ranks :nth-child(odd),.cg-wrap.orientation-black .files :nth-child(odd){color:#5b3a1d}
 .cg-wrap.orientation-white .ranks :nth-child(odd),.cg-wrap.orientation-white .files :nth-child(odd),.cg-wrap.orientation-black .ranks :nth-child(even),.cg-wrap.orientation-black .files :nth-child(even){color:#f3e3c3}
