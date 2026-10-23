@@ -1,4 +1,4 @@
 node_modules/
 
-# SQLite-Shared-Memory-Index, wird automatisch neu erzeugt
-*.db-shm
+# Lokale Daten (Datenbank, Config, Backups) – nie ins Repo, nie überschreiben
+data/
