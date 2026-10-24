@@ -87,6 +87,7 @@ const server = http.createServer(async (req, res) => {
           res.writeHead(200, { 'content-type': 'application/x-chess-pgn; charset=utf-8' });
           return res.end(store.exportPgn(rep(p.slice(16))));
         }
+        if (p.startsWith('/api/train-stats/')) return send(res, 200, store.trainStats(rep(p.slice(17))));
         if (p.startsWith('/api/state/')) return send(res, 200, store.state(rep(p.slice(11))));
         return send(res, 404, { error: 'Unbekannte Route' });
       }
@@ -99,6 +100,14 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, store.reorderMove(rep(b.rep), String(b.from), String(b.to), d));
       }
       if (req.method === 'POST' && p === '/api/delete') return send(res, 200, store.deleteNodes(rep(b.rep), Array.isArray(b.keys) ? b.keys.map(String) : [String(b.key)], !!b.dry));
+      if (req.method === 'POST' && p === '/api/train-result') {
+        if (typeof b.ok !== 'boolean') throw new Error('ok muss true oder false sein');
+        return send(res, 200, store.recordTrain(rep(b.rep), String(b.key), b.ok));
+      }
+      if (req.method === 'POST' && p === '/api/train-reset') {
+        if (b.keys !== undefined && !Array.isArray(b.keys)) throw new Error('keys muss eine Liste sein');
+        return send(res, 200, store.resetTrain(rep(b.rep), b.keys?.map(String)));
+      }
       if (req.method === 'PUT' && p === '/api/gaps-config') { config = patchConfig(config, b); saveConfig(CONFIG_FILE, config); return send(res, 200, publicConfig()); }
       if (req.method === 'POST' && p === '/api/gaps/scan') return send(res, 200, startScan(rep(b.rep)));
       if (req.method === 'POST' && p === '/api/move-san') return send(res, 200, store.addSan(rep(b.rep), String(b.from), String(b.san)));
