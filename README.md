@@ -24,6 +24,7 @@ Anderer Port: `set PORT=3001 && npm start` (Windows) bzw. `PORT=3001 npm start` 
 - **Schwachstellen:** Pro eigener Stellung wird gespeichert, ob der erste Versuch richtig oder falsch war. Stellungen mit Fehlern gelten als schwach, bis sie zweimal hintereinander richtig gespielt wurden. Im Graphen tragen sie einen roten Punkt, die Vorschau zeigt richtige und falsche Versuche. Der Button mit der Anzahl (oder Taste W) trainiert nur ab den Schwachstellen, mit markierten Knoten nur ab denen darin und danach. Per Rechtsklick lässt sich die Statistik zurücksetzen.
 - **Analysieren:** Öffnet Lichess mit der Zugfolge, Brett immer aus Sicht des Repertoires.
 - **Lücken:** Vergleicht das Repertoire mit den häufigsten Zügen im Lichess-Explorer (Masters, alle Lichess-Partien oder ein bestimmter Spieler) und zeigt fehlende Gegnerzüge sowie Stellungen ohne eigenen Zug, sortiert nach Erreichbarkeit. Mindestanteil und Mindestanzahl Partien stellst du pro Quelle ein. Beim ersten Mal muss Lichess die Partien eines Spielers einlesen, das kann einige Minuten dauern, der Dialog zeigt den Fortschritt. Braucht einen kostenlosen Lichess-Token, der nur in `data/config.json` gespeichert wird.
+- **Partien:** Gleicht deine letzten Lichess-Partien (50, 100 oder 300) mit dem Repertoire ab: wo du abgewichen bist (mit dem Repertoire-Zug zum Vergleich) und welche Gegnerzüge fehlen, jeweils mit Anzahl, Datum und Link zur Partie. Fehlende Gegnerzüge lassen sich direkt eintragen. Nutzt denselben Lichess-Token wie die Lücken.
 
 ## Daten
 Im Dialog **Daten**: Export als JSON (beide Repertoires samt Pfeilen und Kreisen) oder als PGN (für Lichess-Studien, Pfeile und Kreise als `[%cal]`/`[%csl]`). Import von JSON-Exporten oder PGN mit Varianten; es wird nur hinzugefügt. Das Ziel wählst du über dem Textfeld: ein PGN geht nach Weiß oder Schwarz, aus einem JSON lassen sich beide oder nur ein Repertoire übernehmen. Ein erneuter Import ändert nichts.
@@ -36,7 +37,7 @@ Im Dialog **Daten**: Export als JSON (beide Repertoires samt Pfeilen und Kreisen
 
 ## Entwicklung
 - `npm test` Tests, `npm run typecheck` Typprüfung, `npm run build` baut `public/app.js` neu (nach Änderungen unter `src/client`).
-- `src/core.ts` Schachlogik und Stellungsschlüssel, `src/db.ts` Datenbank, Import und Export, `src/server.ts` lokale Schnittstelle, `src/gaps.ts`/`src/explorer.ts`/`src/config.ts` Lücken-Erkennung, `src/client/` Oberfläche.
+- `src/core.ts` Schachlogik und Stellungsschlüssel, `src/db.ts` Datenbank, Import und Export, `src/server.ts` lokale Schnittstelle, `src/gaps.ts`/`src/explorer.ts`/`src/config.ts` Lücken-Erkennung, `src/games.ts` Abgleich mit eigenen Partien, `src/client/` Oberfläche.
 - `public/app.js` und `public/css/` werden erzeugt und liegen nicht im Repo.
 
 ## Bausteine
