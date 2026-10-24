@@ -153,6 +153,21 @@ test('Einstellungen: Schwellen pro Quelle als Teil-Update mit Prüfung', () => {
   assert.throws(() => patchConfig(DEFAULTS, { thresholds: 'x' }));
 });
 
+test('Einstellungen: Lichess-Accounts als Liste oder Text, ohne Duplikate', () => {
+  assert.deepEqual(DEFAULTS.accounts, []);
+  assert.deepEqual(patchConfig(DEFAULTS, { accounts: ['Ich', ' zwei_2 ', '', 'ICH'] }).accounts, ['Ich', 'zwei_2']);
+  assert.deepEqual(patchConfig(DEFAULTS, { accounts: 'a-b, CdE  cde,,x_y' }).accounts, ['a-b', 'CdE', 'x_y']);
+  assert.deepEqual(patchConfig(patchConfig(DEFAULTS, { accounts: 'ab' }), { accounts: '' }).accounts, []);
+  assert.throws(() => patchConfig(DEFAULTS, { accounts: ['a'] }), /Account/);
+  assert.throws(() => patchConfig(DEFAULTS, { accounts: 'gut, bö$e' }), /Account/);
+  assert.throws(() => patchConfig(DEFAULTS, { accounts: 5 }), /Accounts/);
+  assert.throws(() => patchConfig(DEFAULTS, { accounts: Array.from({ length: 11 }, (_, i) => 'acc' + i) }), /10/);
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbc-')), 'config.json');
+  fs.writeFileSync(file, JSON.stringify({ accounts: ['Ich', 7, 'x y', 'Du'] }));
+  assert.deepEqual(loadConfig(file).accounts, ['Ich', 'Du']);
+  assert.deepEqual(loadConfig(file + '.fehlt').accounts, []);
+});
+
 test('Einstellungen: alte Datei mit minShare/minGames wird auf Schwellen pro Quelle umgestellt', () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbc-')), 'config.json');
   fs.writeFileSync(file, JSON.stringify({ source: 'masters', minShare: 0.5, minGames: 300, minReach: 0.01 }));

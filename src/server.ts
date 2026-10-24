@@ -17,7 +17,7 @@ store.backup('start', 12 * 3600_000);
 // Lücken-Erkennung: Einstellungen (inkl. Lichess-Token) liegen nur lokal in data/config.json
 const CONFIG_FILE = path.join(path.dirname(DB_FILE), 'config.json');
 let config = loadConfig(CONFIG_FILE);
-const publicConfig = () => ({ tokenSet: !!config.lichessToken, source: config.source, player: config.player, playerColor: config.playerColor, thresholds: config.thresholds });
+const publicConfig = () => ({ tokenSet: !!config.lichessToken, source: config.source, player: config.player, playerColor: config.playerColor, thresholds: config.thresholds, accounts: config.accounts });
 // indexing: Lichess liest den Spieler gerade ein (Warteschlange, bisher gezählte Partien), sonst null
 interface Job { state: 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: Gap[]; own: OwnGap[]; source: string; player: string; color: string; indexing: ExplorerProgress | null }
 const jobs: Partial<Record<Rep, Job>> = {};
@@ -58,12 +58,11 @@ let checking = false;
 async function checkOwnGames(max: unknown) {
   const n = max === undefined ? 100 : Number(max);
   if (!Number.isInteger(n) || n < 10 || n > 500) throw new Error('Anzahl der Partien muss zwischen 10 und 500 liegen.');
-  if (!config.lichessToken) throw new Error('Bitte zuerst einen Lichess-Token eintragen.');
   if (checking) throw new Error('Es läuft bereits ein Abgleich.');
   checking = true;
   try {
-    const { user, games } = await fetchGames({ token: config.lichessToken, max: n, baseUrl: process.env.CHESSBOOK_LICHESS_URL });
-    return { user, white: checkGames(store.state('white'), 'white', user, games), black: checkGames(store.state('black'), 'black', user, games) };
+    const { users, games } = await fetchGames({ token: config.lichessToken, accounts: config.accounts, max: n, baseUrl: process.env.CHESSBOOK_LICHESS_URL });
+    return { users, white: checkGames(store.state('white'), 'white', users, games), black: checkGames(store.state('black'), 'black', users, games) };
   } finally { checking = false; }
 }
 

@@ -528,7 +528,7 @@ $('#imp').onclick = async () => {
 // ---------- Lücken-Erkennung (Vergleich mit den häufigsten Zügen auf Lichess)
 interface GapRow { key: string; san: string; games: number; share: number; reach: number }
 interface GapJob { state: 'none' | 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: GapRow[]; own: { key: string; reach: number }[]; source: string; player: string; color: string; indexing?: { queue: number | null; games: number } | null }
-interface GapCfg { tokenSet: boolean; source: 'masters' | 'lichess' | 'player'; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds?: Partial<Record<GapCfg['source'], { minShare: number; minGames: number }>> }
+interface GapCfg { tokenSet: boolean; source: 'masters' | 'lichess' | 'player'; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds?: Partial<Record<GapCfg['source'], { minShare: number; minGames: number }>>; accounts?: string[] }
 const gapJobs: Record<Rep, GapJob | null> = { white: null, black: null };
 let gapKeys = new Set<string>(), gapCfg: GapCfg | null = null, gapTimer = 0, editToken = false;
 const gdlg = $<HTMLDialogElement>('#gdlg');
@@ -645,24 +645,26 @@ gdlg.addEventListener('change', async e => {
 });
 
 // ---------- Partien (Abgleich mit den eigenen Lichess-Partien)
-interface GameRef { id: string; color: Rep; ply: number; date: number; opponent: string }
+interface GameRef { id: string; color: Rep; ply: number; date: number; opponent: string; account: string }
 interface Deviation { kind: 'own' | 'opp'; key: string; san: string; uci: string; book: string[]; count: number; games: GameRef[] }
 interface CheckResult { games: number; clean: number; deviations: Deviation[] }
 const checks: Record<Rep, CheckResult | null> = { white: null, black: null };
 const MAXES = [50, 100, 300];
-let gmMax = 100, gmBusy = false, gmErr = '';
+let gmMax = 100, gmBusy = false, gmErr = '', gmUsers: string[] = [];
 try { const m = Number(localStorage.getItem('cbgmax')); if (MAXES.includes(m)) gmMax = m; } catch { /* ignorieren */ }
 const pdlg = $<HTMLDialogElement>('#pdlg');
 const day = (t: number) => new Date(t).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
 function renderGmCfg() {
   $('#phead').innerHTML = `<h2>Partien · ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>`;
+  const acc = gapCfg?.accounts ?? [], ph = !acc.length && gapCfg?.tokenSet && gmUsers.length ? gmUsers[0] : 'name1, name2';
   $('#pcfg').innerHTML = (gapCfg ? tokenHtml(gapCfg) : '') +
+    `<label class="fld"><span class="lb">Accounts</span><input id="pacc" type="text" value="${esc(acc.join(', '))}" placeholder="${esc(ph)}" autocomplete="off" spellcheck="false"></label>` +
     `<div class="sec">Letzte Partien</div><div class="seg" id="pmax">${MAXES.map(n => `<button data-max="${n}"${n === gmMax ? ' class="on"' : ''}>${n}</button>`).join('')}</div>`;
 }
 // Stellungen, die nicht (mehr) im Repertoire sind, werden ausgelassen
 function renderGmRes() {
   const r = checks[rep], b = $<HTMLButtonElement>('#pchk');
-  b.disabled = !gapCfg?.tokenSet || gmBusy; b.classList.toggle('busy', gmBusy);
+  b.disabled = !(gapCfg?.tokenSet || gapCfg?.accounts?.length) || gmBusy; b.classList.toggle('busy', gmBusy);
   b.innerHTML = gmBusy ? '<span class="spin s"></span>Abgleich läuft …' : checks.white || checks.black ? 'Erneut abgleichen' : 'Abgleichen';
   let h = gmErr ? `<div class="sec"></div><div class="note err">${esc(gmErr)}</div>` : '';
   if (r) {
@@ -675,11 +677,12 @@ function renderGmRes() {
       for (const d of ds.slice(0, 100)) {
         const ply = pathTo(d.key).length + 1, side = ply % 2 ? 'w' : 'b', g = d.games[0];
         const num = `${Math.ceil(ply / 2)}${side === 'w' ? '.' : '...'}`;
-        const opps = [...new Set(d.games.map(x => x.opponent))].join(', ');
+        const multi = gmUsers.length > 1;
+        const opps = [...new Set(d.games.map(x => multi ? `${x.opponent} (${x.account})` : x.opponent))].join(', ');
         const book = kind === 'own' && d.book.length ? `<span class="bk">statt ${d.book.map(s => sanHtml(side, s)).join(', ')}</span>` : '';
         const link = g ? `<a class="btn sm" href="https://lichess.org/${encodeURIComponent(g.id)}/${g.color === 'black' ? 'black' : 'white'}#${Number(g.ply) || 0}" target="_blank" rel="noopener" title="${esc(g.opponent)}">↗</a>` : '';
         h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(d.key))}</div><div class="gm"><span class="mv">${num}${sanHtml(side, d.san)}</span>${book}
-          <span class="gs" title="${esc(opps)}">${de(d.count)}×${g ? ' · ' + day(g.date) : ''}</span></div></div>
+          <span class="gs" title="${esc(opps)}">${de(d.count)}×${g ? ' · ' + day(g.date) + (multi ? ' · ' + esc(g.account) : '') : ''}</span></div></div>
           <div class="ga"><button class="sm" data-act="go" data-k="${esc(d.key)}">Hingehen</button>${kind === 'opp' ? `<button class="sm soft" data-act="add" data-k="${esc(d.key)}" data-san="${esc(d.san)}">Eintragen</button>` : ''}${link}</div></div>`;
       }
       h += '</div>';
@@ -691,6 +694,13 @@ $('#gms').onclick = async () => {
   try { gapCfg = await api('/api/gaps-config'); editToken = false; gmErr = ''; renderGmCfg(); renderGmRes(); pdlg.showModal(); } catch (e) { toast((e as Error).message); }
 };
 $('#pclose').onclick = () => pdlg.close();
+pdlg.addEventListener('change', async e => {
+  const t = e.target as HTMLInputElement;
+  if (t.id !== 'pacc') return;
+  try { gapCfg = await api('/api/gaps-config', { accounts: t.value }, 'PUT'); }
+  catch (err) { toast((err as Error).message); }
+  renderGmCfg(); renderGmRes();
+});
 pdlg.addEventListener('click', async e => {
   const b = (e.target as HTMLElement).closest('button'); const act = b?.dataset.act; const k = b?.dataset.k;
   try {
@@ -698,7 +708,7 @@ pdlg.addEventListener('click', async e => {
     else if (b?.dataset.max) { gmMax = Number(b.dataset.max); try { localStorage.setItem('cbgmax', String(gmMax)); } catch { /* ignorieren */ } renderGmCfg(); }
     else if (b?.id === 'pchk') {
       gmBusy = true; gmErr = ''; renderGmRes();
-      try { const r = await api('/api/games/check', { max: gmMax }); checks.white = r.white; checks.black = r.black; } catch (err) { gmErr = (err as Error).message; } finally { gmBusy = false; }
+      try { const r = await api('/api/games/check', { max: gmMax }); checks.white = r.white; checks.black = r.black; gmUsers = r.users ?? []; } catch (err) { gmErr = (err as Error).message; } finally { gmBusy = false; }
       renderGmRes();
     }
     else if (act === 'go' && k) { pdlg.close(); go(k); }
