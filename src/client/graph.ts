@@ -64,6 +64,9 @@ export function sanHtml(side: 'w' | 'b', san: string): string {
   return m ? `<img src="pieces/${side}${m[1]}.svg" alt="${m[1]}">${m[2]}` : san;
 }
 
+/** Punkt am rechten Rand eines Knotens: zur Stellung gibt es eine Notiz. */
+export const noteDot = (L: Layout, k: string) => `<circle class="nd" cx="${L.pos[k].x + NODE_W - 9}" cy="${L.pos[k].y + NODE_H / 2}" r="3.5"/>`;
+
 /** Training: nur aufgedeckte Stellungen zeigen, geschaffte grün, Fehlerstellen rot (rot hat Vorrang). */
 export interface Reveal { shown: Set<string>; ok: Set<string>; bad: Set<string> }
 
@@ -88,6 +91,7 @@ export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gap
     const inc = L.incoming[k] ?? 0;
     nodes += `<g class="${cls}" data-k="${k}"><rect x="${p.x}" y="${p.y}" width="${NODE_W}" height="${NODE_H}" rx="8"/><circle class="sd" cx="${p.x + 12}" cy="${p.y + NODE_H / 2}" r="4"/>` +
       `<foreignObject x="${p.x + 21}" y="${p.y + 2}" width="${NODE_W - 26}" height="${NODE_H - 4}"><div class="lab"><span class="mn">${L.num[k]}</span>${sanHtml(L.side[k], L.san[k])}</div></foreignObject>` +
+      (!rv && st.positions[k]?.note ? noteDot(L, k) : '') +
       (gaps?.has(k) ? `<circle class="gapdot" cx="${p.x + 6}" cy="${p.y + 2}" r="5"><title>Lücke</title></circle>` : '') +
       (inc > 1 ? `<title>Zugumstellung: ${inc} Wege</title><circle class="badge" cx="${p.x + NODE_W - 6}" cy="${p.y + 2}" r="8"/><text class="bt" x="${p.x + NODE_W - 6}" y="${p.y + 5.5}">${inc}</text>` : '') + '</g>';
   }

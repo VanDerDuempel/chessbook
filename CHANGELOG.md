@@ -5,6 +5,7 @@ Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 ## 2026-10-24
 
 ### Neu
+- Notizen pro Stellung: Textfeld unter dem Zugpfad, gespeichert beim Tippen. Im Graphen markiert ein gelber Punkt Stellungen mit Notiz, die Vorschau zeigt den Anfang. Im Training erscheint die Notiz erst nach einem Fehler. PGN-Kommentare werden beim Import zu Notizen und beim Export wieder zu Kommentaren, der JSON-Export enthält sie ebenfalls. Bestehende Datenbanken bekommen die neue Spalte beim ersten Start automatisch.
 - Zugreihenfolge ändern: Rechtsklick auf einen Knoten bietet „Nach links“ und „Nach rechts“, ganz links steht die Hauptvariante. Die Reihenfolge bestimmt den Graphen, die Navigation mit ↓/Ende und den PGN-Export.
 - Training: Das Repertoire wird ab der aktuellen Stellung abgefragt. Der Gegner zieht zufällig aus dem Repertoire, falsche eigene Züge zählen als Fehler und zeigen die Lösung als Pfeil. Zähler für richtige und falsche Züge, Neustart am Ende jeder Variante. Taste T, Escape beendet.
 
