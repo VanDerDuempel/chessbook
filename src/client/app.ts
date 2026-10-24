@@ -676,6 +676,8 @@ function renderPins() {
 function renderAc() {
   const l = $('#pacl'), open = acList.length > 0;
   l.hidden = !open; $('#pacq').setAttribute('aria-expanded', String(open));
+  // Fest am Suchfeld ausrichten, damit die Liste über den Dialogrand hinausragen darf statt abgeschnitten zu werden
+  if (open) { const r = $('#pacq').closest('.acq')!.getBoundingClientRect(); Object.assign(l.style, { left: r.left + 'px', top: r.bottom + 4 + 'px', width: r.width + 'px' }); }
   l.innerHTML = acList.map((u, i) => `<button type="button" role="option" data-pin="${esc(u.name)}"${i === acIdx ? ' class="on" aria-selected="true"' : ''}>${u.title ? `<span class="ttl">${esc(u.title)}</span>` : ''}${esc(u.name)}</button>`).join('');
   l.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
 }
@@ -722,6 +724,7 @@ pdlg.addEventListener('keydown', e => {
 });
 pdlg.addEventListener('cancel', e => { if (acEsc) e.preventDefault(); });
 pdlg.addEventListener('focusout', e => { if ((e.target as HTMLElement).id === 'pacq') closeAc(); });
+pdlg.addEventListener('scroll', e => { if (acList.length && e.target !== $('#pacl')) closeAc(); }, true);   // fest positionierte Liste würde sonst verrutschen
 pdlg.addEventListener('mousedown', e => { if ((e.target as HTMLElement).closest('#pacl')) e.preventDefault(); });   // Fokus im Suchfeld lassen
 // Stellungen, die nicht (mehr) im Repertoire sind, werden ausgelassen
 function renderGmRes() {

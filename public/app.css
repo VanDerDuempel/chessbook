@@ -251,7 +251,7 @@ a.btn.sm{padding:5px 9px;font-size:13px;border-radius:8px}
 .acq:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .acq:has(input:disabled){opacity:.5}
 dialog .acq input{flex:1;min-width:0;border:0;background:transparent;color:var(--text);font:inherit;padding:7px 0;outline:none}.acq input::-webkit-search-cancel-button{display:none}
-.acl{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:5;max-height:260px;overflow:auto;background:var(--panel);border:1px solid var(--bd);border-radius:10px;box-shadow:var(--shadow);padding:4px}
+.acl{position:fixed;z-index:5;max-height:260px;overflow:auto;background:var(--panel);border:1px solid var(--bd);border-radius:10px;box-shadow:var(--shadow);padding:4px}
 .acl[hidden]{display:none}
 .acl button{display:flex;align-items:baseline;justify-content:flex-start;gap:6px;width:100%;border:0;border-radius:7px;background:transparent;padding:6px 10px;text-align:left}
 .acl button:hover:not(:disabled),.acl button.on{background:var(--accent-soft)}
