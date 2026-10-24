@@ -25,3 +25,31 @@ export function markDone(S: State, rep: Rep, keys: string[], done: Set<string>) 
     done.add(k);
   }
 }
+
+// Schwachstellen: eigene Stellungen, in denen beim ersten Versuch falsch gezogen wurde
+
+/** Statistik je Stellung (eigener Zug, erster Versuch): richtig → ok+1, streak+1; falsch → bad+1, streak=0. */
+export interface TrainStat { ok: number; bad: number; streak: number; last: number }
+
+/** So oft muss eine Stellung nach einem Fehler in Folge richtig gespielt werden, bis sie nicht mehr als schwach gilt. */
+export const WEAK_STREAK = 2;
+
+export function isWeak(s: TrainStat | undefined): boolean {
+  return !!s && s.bad > 0 && s.streak < WEAK_STREAK;
+}
+
+/**
+ * Schwache Stellungen, die es noch gibt und die Züge haben; mit `from` nur die von dort erreichbaren (inkl. `from`).
+ * Sortiert: kleinere Serie, dann mehr Fehler, dann höherer Fehleranteil.
+ */
+export function weakKeys(S: State, stats: Record<string, TrainStat>, from?: string[]): string[] {
+  let reach: Set<string> | undefined;
+  if (from) {
+    reach = new Set(from.filter(k => S.positions[k]));
+    for (const k of reach) for (const m of S.moves[k] ?? []) reach.add(m.to);
+  }
+  const rate = (s: TrainStat) => s.bad / (s.ok + s.bad);
+  return Object.keys(stats)
+    .filter(k => isWeak(stats[k]) && S.positions[k] && S.moves[k]?.length && (!reach || reach.has(k)))
+    .sort((a, b) => { const x = stats[a], y = stats[b]; return x.streak - y.streak || y.bad - x.bad || rate(y) - rate(x); });
+}

@@ -67,7 +67,9 @@ export function sanHtml(side: 'w' | 'b', san: string): string {
 /** Training: nur aufgedeckte Stellungen zeigen, geschaffte grün, Fehlerstellen rot (rot hat Vorrang). */
 export interface Reveal { shown: Set<string>; ok: Set<string>; bad: Set<string> }
 
-export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gaps?: Set<string>, marked?: Set<string>, rv?: Reveal): string {
+/** `weak`: Schwachstellen bekommen Klasse und Punkt unten rechts, nicht im Training mit `rv`. */
+
+export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gaps?: Set<string>, marked?: Set<string>, rv?: Reveal, weak?: Set<string>): string {
   if (!Object.keys(L.pos).length) return '<div class="empty">Noch keine Züge</div>';
   const pathEdges = new Set<string>(), pathNodes = new Set<string>();
   for (let x = cur; L.parent[x] !== undefined; x = L.parent[x]) { pathEdges.add(L.parent[x] + '>' + x); pathNodes.add(x); }
@@ -83,12 +85,13 @@ export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gap
   let nodes = '';
   for (const [k, p] of Object.entries(L.pos)) {
     if (rv && !rv.shown.has(k)) continue;
-    const tr = rv ? (rv.bad.has(k) ? ' tbad' : rv.ok.has(k) ? ' tok' : '') : '';
-    const cls = `n ${L.side[k]}${k === cur ? ' cur' : pathNodes.has(k) ? ' onpath' : ''}${marked?.has(k) ? ' sel' : ''}${gaps?.has(k) ? ' gp' : ''}${tr}`;
+    const tr = rv ? (rv.bad.has(k) ? ' tbad' : rv.ok.has(k) ? ' tok' : '') : '', wk = !rv && !!weak?.has(k);
+    const cls = `n ${L.side[k]}${k === cur ? ' cur' : pathNodes.has(k) ? ' onpath' : ''}${marked?.has(k) ? ' sel' : ''}${gaps?.has(k) ? ' gp' : ''}${wk ? ' weak' : ''}${tr}`;
     const inc = L.incoming[k] ?? 0;
     nodes += `<g class="${cls}" data-k="${k}"><rect x="${p.x}" y="${p.y}" width="${NODE_W}" height="${NODE_H}" rx="8"/><circle class="sd" cx="${p.x + 12}" cy="${p.y + NODE_H / 2}" r="4"/>` +
       `<foreignObject x="${p.x + 21}" y="${p.y + 2}" width="${NODE_W - 26}" height="${NODE_H - 4}"><div class="lab"><span class="mn">${L.num[k]}</span>${sanHtml(L.side[k], L.san[k])}</div></foreignObject>` +
       (gaps?.has(k) ? `<circle class="gapdot" cx="${p.x + 6}" cy="${p.y + 2}" r="5"><title>Lücke</title></circle>` : '') +
+      (wk ? `<circle class="weakdot" cx="${p.x + NODE_W - 7}" cy="${p.y + NODE_H - 7}" r="4"><title>Schwachstelle</title></circle>` : '') +
       (inc > 1 ? `<title>Zugumstellung: ${inc} Wege</title><circle class="badge" cx="${p.x + NODE_W - 6}" cy="${p.y + 2}" r="8"/><text class="bt" x="${p.x + NODE_W - 6}" y="${p.y + 5.5}">${inc}</text>` : '') + '</g>';
   }
   return `<svg width="${L.width * zoom}" height="${L.height * zoom}" viewBox="0 0 ${L.width} ${L.height}">${normal}${onPath}${hot}${nodes}</svg>`;
