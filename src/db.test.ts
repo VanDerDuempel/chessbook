@@ -208,3 +208,42 @@ test('Zugreihenfolge: Hauptvariante, vor und zurück, wirkt auf State und PGN-Ex
   assert.deepEqual(sans(), ['d4', 'c4', 'e4', 'b3']);
   assert.throws(() => s.reorderMove('white', START_KEY, 'gibt es nicht', 'main'), /unbekannt/);
 });
+
+test('Trainingsstatistik: Zählen und Serie, Fehler setzt die Serie zurück', () => {
+  const s = fresh();
+  const k = play(s, 'e4');
+  assert.deepEqual(s.trainStats('white'), {});
+  s.recordTrain('white', k, true);
+  const a = s.recordTrain('white', k, true);
+  assert.deepEqual({ ...a, last: 0 }, { ok: 2, bad: 0, streak: 2, last: 0 });
+  assert.ok(a.last > 0);
+  const b = s.recordTrain('white', k, false);
+  assert.deepEqual([b.ok, b.bad, b.streak], [2, 1, 0]);
+  assert.equal(s.recordTrain('white', k, true).streak, 1);
+  assert.deepEqual({ ...s.trainStats('white')[k], last: 0 }, { ok: 3, bad: 1, streak: 1, last: 0 });
+  assert.deepEqual(s.trainStats('black'), {});
+});
+
+test('Trainingsstatistik: unbekannte Stellung wirft, Löschen der Stellung entfernt sie', () => {
+  const s = fresh();
+  assert.throws(() => s.recordTrain('white', 'gibt-es-nicht', true), /Stellung unbekannt/);
+  const k = play(s, 'e4');
+  assert.throws(() => s.recordTrain('black', k, true), /Stellung unbekannt/);
+  s.recordTrain('white', k, true);
+  s.recordTrain('white', START_KEY, false);
+  s.deleteNodes('white', [k]);
+  assert.deepEqual(Object.keys(s.trainStats('white')), [START_KEY]);
+});
+
+test('Trainingsstatistik zurücksetzen: einzelne Stellungen oder ganzes Repertoire', () => {
+  const s = fresh();
+  const a = play(s, 'e4'), b = play(s, 'd4');
+  for (const k of [START_KEY, a, b]) s.recordTrain('white', k, true);
+  s.recordTrain('black', START_KEY, true);
+  assert.deepEqual(s.resetTrain('white', [a, 'gibt-es-nicht']), { removed: 1 });
+  assert.deepEqual(Object.keys(s.trainStats('white')).sort(), [START_KEY, b].sort());
+  assert.deepEqual(s.resetTrain('white'), { removed: 2 });
+  assert.deepEqual(s.trainStats('white'), {});
+  assert.equal(Object.keys(s.trainStats('black')).length, 1);
+  assert.deepEqual(Object.keys(s.exportAll()), ['version', 'white', 'black']);
+});

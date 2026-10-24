@@ -6,7 +6,7 @@ import { chessgroundDests } from 'chessops/compat';
 import { parseSquare } from 'chessops/util';
 import { fromFen, playUci, START_KEY } from '../core';
 import { layout, renderGraph, miniBoard, sanHtml, keysInRect, noteDot, NODE_W, NODE_H, type Layout } from './graph';
-import { openMoves, markDone } from './train';
+import { openMoves, markDone, weakKeys, isWeak, type TrainStat } from './train';
 import { findPosition } from './search';
 import type { State, Shape, Rep } from '../db';
 
@@ -22,9 +22,11 @@ let pending: { keys: string[]; n: number } | null = null;
 let marked = new Set<string>();
 let promo: { from: string; to: string; color: string } | null = null;
 let settingShapes = false;
+// Trainingsstatistik pro eigener Stellung (erster Versuch richtig/falsch, Serie)
+let stats: Record<string, TrainStat> = {};
 // Training: Startstellungen, aktuelle Ausgangsstellung, Zähler, Fehler in dieser Stellung, Lösung zeigen, besuchte Stellungen (in Zugreihenfolge) und gespielte Züge der Variante,
 // Variante bisher fehlerfrei, erledigte Stellungen dieser Runde, im Graphen aufgedeckte und rot markierte Stellungen, Rundenende, Timer
-let tr: { starts: string[]; start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; shown: Set<string>; red: Set<string>; round: boolean; t: number } | null = null;
+let tr: { weak: boolean; starts: string[]; start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; shown: Set<string>; red: Set<string>; round: boolean; t: number } | null = null;
 const flips: Record<Rep, boolean> = { white: false, black: false };
 try { Object.assign(flips, JSON.parse(localStorage.getItem('cbflip') ?? '{}')); } catch { /* ignorieren */ }
 const orientation = (): Rep => (flips[rep] ? (rep === 'white' ? 'black' : 'white') : rep);
@@ -41,7 +43,7 @@ function toast(msg: string) {
 }
 async function load() {
   await flushNote();
-  S = await api('/api/state/' + rep);
+  [S, stats] = await Promise.all([api('/api/state/' + rep), api('/api/train-stats/' + rep)]);
   if (!S.positions[cur]) cur = S.root;
   stack = stack.filter(k => S.positions[k]); fwd = fwd.filter(k => S.positions[k]);
   marked = new Set([...marked].filter(k => S.positions[k]));
@@ -212,7 +214,7 @@ const G = $('#graph');
 function drawGraph() {
   hidePv();
   const rv = tr && { shown: tr.shown, ok: tr.done, bad: new Set([...tr.red].filter(k => !tr!.done.has(k))) };
-  G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys, marked, rv || undefined);
+  G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys, marked, rv || undefined, tr ? undefined : weakSet());
   focusCur();
 }
 // Aktuelle Stellung mittig zeigen; in der Startstellung den ersten Zug der Hauptvariante oben
@@ -303,7 +305,7 @@ function hidePv() { PV.hidden = true; pvKey = null; }
 G.addEventListener('mousemove', e => {
   const k = pan || lasso || tr ? null : attr(e.target as Element, 'data-k');
   if (!k || !S.positions[k]) { hidePv(); return; }
-  if (pvKey !== k) { pvKey = k; const n = S.positions[k].note; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}</div>` + (n ? `<div class="pn">${esc(n)}</div>` : ''); }
+  if (pvKey !== k) { pvKey = k; const st = stats[k], n = S.positions[k].note; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}${st ? ` <b class="ok">✓ ${st.ok}</b> <b class="bad">✗ ${st.bad}</b>` : ''}</div>` + (n ? `<div class="pn">${esc(n)}</div>` : ''); }
   let x = e.clientX + 18, y = e.clientY + 18;
   if (x + 212 > innerWidth) x = e.clientX - 222;
   const h = PV.offsetHeight || 236;
@@ -325,7 +327,8 @@ G.addEventListener('contextmenu', e => {
   // Reihenfolge unter dem Vorgänger im Graphen (links = Hauptvariante)
   const p = L.parent[k], sib = n || p === undefined ? [] : S.moves[p], i = sib.findIndex(m => m.to === k);
   const ord = sib.length > 1 ? (i > 0 ? '<button data-act="up">Nach links</button>' : '') + (i < sib.length - 1 ? '<button data-act="down">Nach rechts</button>' : '') : '';
-  CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button>${ord}<button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
+  const rst = cmKeys.some(x => stats[x]) ? '<button data-act="rst">Statistik zurücksetzen</button>' : '';
+  CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button>${ord}${rst}<button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
   CM.style.left = e.clientX + 'px'; CM.style.top = e.clientY + 'px'; CM.hidden = false;
 });
 CM.onclick = e => {
@@ -333,6 +336,7 @@ CM.onclick = e => {
   CM.hidden = true;
   if (act === 'del') void askDelete(cmKeys);
   else if (act === 'train') startTrain(cmKeys);
+  else if (act === 'rst') void resetStats(cmKeys);
   else void reorder(cmKeys[0], act as 'main' | 'up' | 'down');
 };
 async function reorder(k: string, dir: 'main' | 'up' | 'down') {
@@ -349,7 +353,9 @@ function refresh() {
   const atRoot = cur === S.root || !!tr, nx = !!nextOf(cur) && !tr;
   ($('#n0') as HTMLButtonElement).disabled = ($('#n1') as HTMLButtonElement).disabled = atRoot;
   ($('#n2') as HTMLButtonElement).disabled = ($('#n3') as HTMLButtonElement).disabled = !nx;
-  $('#trn').classList.toggle('on', !!tr);
+  $('#trn').classList.toggle('on', !!tr && !tr.weak);
+  const nw = weakKeys(S, stats).length, wb = $('#weak');
+  wb.classList.toggle('on', !!tr?.weak); wb.hidden = !nw && !tr?.weak; $('#weakn').textContent = nw ? String(nw) : '';
 }
 async function switchRep(r: Rep) { if (r === rep) { navStart(); return; } rep = r; cur = START_KEY; stack = []; fwd = []; pending = null; marked.clear(); await load(); await loadGapJob().catch(() => {}); refresh(); }
 function flipBoard() { flips[rep] = !flips[rep]; try { localStorage.setItem('cbflip', JSON.stringify(flips)); } catch { /* ignorieren */ } refresh(); }
@@ -358,10 +364,10 @@ $('#tw').onclick = () => void switchRep('white'); $('#tb').onclick = () => void 
 $('#n0').onclick = navStart; $('#n1').onclick = navBack; $('#n2').onclick = navFwd; $('#n3').onclick = navEnd;
 $('#fl').onclick = flipBoard;
 addEventListener('keydown', e => {
-  if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName) || ($('#dlg') as HTMLDialogElement).open) return;
+  if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName) || document.querySelector('dialog[open]')) return;
   const f: Record<string, () => void> = tr
-    ? { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, Escape: stopTrain }
-    : { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, '/': () => Q.focus(), ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
+    ? { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, w: toggleWeak, W: toggleWeak, Escape: stopTrain }
+    : { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, w: toggleWeak, W: toggleWeak, '/': () => Q.focus(), ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
   if (f[e.key]) { e.preventDefault(); f[e.key](); } else if (e.key === 'Escape') { CM.hidden = true; clearMarks(); }
 });
 addEventListener('resize', () => cg.redrawAll());
@@ -422,17 +428,24 @@ split.addEventListener('dblclick', () => { setBw(null); try { localStorage.remov
 // ---------- Training (Repertoire abfragen)
 // Der Gegner spielt zufällig einen seiner Repertoirezüge, man selbst muss einen eigenen finden.
 // Am Ende einer Variante geht es zurück zur Ausgangsstellung. Fehlerfrei gespielte Varianten kommen in dieser Runde nicht wieder,
-// sind alle geschafft, beginnt eine neue Runde. Nichts wird gespeichert.
+// sind alle geschafft, beginnt eine neue Runde. Gespeichert wird pro eigener Stellung nur der erste Versuch (richtig/falsch).
+// Schwachstellen-Training (W) startet ab den Stellungen mit offenen Fehlern, mit Markierung nur ab denen darin bzw. danach.
 // Der Graph deckt sich dabei auf: gespielte Stellungen erscheinen, nach einem Fehler nur bis zur Fehlerstelle (rot),
 // fehlerfrei geschaffte werden grün. Mit einer neuen Runde ist er wieder verdeckt (bis auf die Startstellungen).
 // Mit markierten Knoten (oder per Rechtsklick) geht es ab diesen Stellungen, sonst ab der aktuellen.
 function toggleTrain() { if (tr) stopTrain(); else startTrain(marked.size ? [...marked] : undefined); }
-function startTrain(from?: string[]) {
+function toggleWeak() {
+  if (tr) { stopTrain(); return; }
+  const ks = weakKeys(S, stats, marked.size ? [...marked] : undefined);
+  if (!ks.length) { toast('Keine Schwachstellen'); return; }
+  startTrain(ks, true);
+}
+function startTrain(from?: string[], weak = false) {
   const starts = (from ?? [S.moves[cur]?.length ? cur : S.root]).filter(k => S.moves[k]?.length);
   if (!starts.length) { toast(from ? 'Ab hier keine Züge' : 'Noch keine Züge im Repertoire'); return; }
   CM.hidden = true; pending = null; promo = null;
   const start = starts.includes(cur) ? cur : starts[Math.floor(Math.random() * starts.length)];
-  tr = { starts, start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), shown: new Set(), red: new Set(), round: false, t: 0 };
+  tr = { weak, starts, start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), shown: new Set(), red: new Set(), round: false, t: 0 };
   tr.shown = baseShown(tr.starts);
   document.body.classList.add('train');
   if (start !== cur) { stack.push(cur); fwd = []; cur = start; }
@@ -472,8 +485,8 @@ function trRestart() {
 function trMove(uci: string) {
   const t = tr!, p = playUci(fromFen(S.positions[cur].fen), uci);
   const m = p && S.moves[cur]?.find(x => x.uci === p.uci);
-  if (m) { if (!t.miss) t.ok++; flash('ok'); trGo(m.to, m.san); return; }
-  if (!t.miss) { t.bad++; t.miss = true; if (t.clean) t.red.add(cur); t.clean = false; }
+  if (m) { if (!t.miss) { t.ok++; void record(cur, true); } flash('ok'); trGo(m.to, m.san); return; }
+  if (!t.miss) { t.bad++; void record(cur, false); t.miss = true; if (t.clean) t.red.add(cur); t.clean = false; }
   t.hint = true; flash('bad'); refresh();
 }
 // Startstellungen samt Weg dorthin sind immer sichtbar
@@ -482,6 +495,14 @@ function flash(c: 'ok' | 'bad' | 'done') {
   const el = $('#bw'); el.classList.remove('ok', 'bad', 'done'); void el.offsetWidth; el.classList.add(c);
 }
 $('#trn').onclick = toggleTrain;
+$('#weak').onclick = toggleWeak;
+const weakSet = () => new Set(Object.keys(stats).filter(k => isWeak(stats[k])));
+async function record(key: string, ok: boolean) {
+  try { stats[key] = await api('/api/train-result', { rep, key, ok }); } catch (e) { toast((e as Error).message); }
+}
+async function resetStats(keys: string[]) {
+  try { await api('/api/train-reset', { rep, keys }); keys.forEach(k => delete stats[k]); refresh(); } catch (e) { toast((e as Error).message); }
+}
 
 // ---------- Daten (Export und Import)
 const dlg = $<HTMLDialogElement>('#dlg'), txt = $<HTMLTextAreaElement>('#txt');
@@ -556,6 +577,17 @@ const SOURCES: [string, string, string][] = [
   ['lichess', 'Lichess', 'Alle Partien auf Lichess'],
   ['player', 'Spieler', 'Partien eines Lichess-Spielers'],
 ];
+// Token-Feld, geteilt von Lücken und Partien; das Eingabefeld wird relativ zum Button gesucht, weil beide Dialoge im DOM sind
+const tokenHtml = (c: GapCfg) => c.tokenSet && !editToken
+  ? `<div class="stat"><i></i>Lichess verbunden<button class="link" data-act="chtok">Ändern</button></div>`
+  : `<label class="fld"><span class="lb">Lichess-Token</span><span class="inl"><input class="tok" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
+     <p class="hint"><a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">Token erstellen ↗</a></p>`;
+async function tokenAct(act: string | undefined, b: HTMLElement | null) {
+  if (act === 'chtok') editToken = true;
+  else if (act === 'savetok') { gapCfg = await api('/api/gaps-config', { lichessToken: b?.closest('.fld')?.querySelector<HTMLInputElement>('input.tok')?.value ?? '' }, 'PUT'); editToken = false; }
+  else return false;
+  return true;
+}
 function renderGapCfg() {
   const c = gapCfg; if (!c) return;
   const seg = SOURCES.map(([v, n, d]) => `<button data-src="${v}" title="${d}"${v === c.source ? ' class="on"' : ''}>${n}</button>`).join('');
@@ -563,11 +595,7 @@ function renderGapCfg() {
   const opp = rep === 'white' ? 'Schwarz' : 'Weiß';
   const sel = (v: string, n: string) => `<option value="${v}"${v === c.playerColor ? ' selected' : ''}>${n}</option>`;
   $('#ghead').innerHTML = `<h2>Lücken · ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>`;
-  $('#gcfg').innerHTML =
-    (c.tokenSet && !editToken
-      ? `<div class="stat"><i></i>Lichess verbunden<button class="link" data-act="chtok">Ändern</button></div>`
-      : `<label class="fld"><span class="lb">Lichess-Token</span><span class="inl"><input id="gtoken" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
-         <p class="hint"><a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">Token erstellen ↗</a></p>`) +
+  $('#gcfg').innerHTML = tokenHtml(c) +
     `<div class="sec">Quelle</div><div class="seg" id="gsrc">${seg}</div>` +
     (c.source === 'player'
       ? `<div class="grid2"><label class="fld"><span class="lb">Spieler</span><input id="gplayer" type="text" value="${esc(c.player)}" placeholder="Lichess-Name" maxlength="30" autocomplete="off"></label>
@@ -623,8 +651,7 @@ $('#gclose').onclick = () => gdlg.close();
 gdlg.addEventListener('click', async e => {
   const b = (e.target as HTMLElement).closest('button'); const act = b?.dataset.act; const k = b?.dataset.k;
   try {
-    if (act === 'chtok') { editToken = true; renderGapCfg(); renderGapRes(); }
-    else if (act === 'savetok') { gapCfg = await api('/api/gaps-config', { lichessToken: ($('#gtoken') as HTMLInputElement).value }, 'PUT'); editToken = false; renderGapCfg(); renderGapRes(); }
+    if (await tokenAct(act, b)) { renderGapCfg(); renderGapRes(); }
     else if (b?.dataset.src) { gapCfg = await api('/api/gaps-config', { source: b.dataset.src }, 'PUT'); renderGapCfg(); renderGapRes(); }
     else if (b?.id === 'gscan') { gapJobs[rep] = await api('/api/gaps/scan', { rep }); updateGapKeys(); renderGapRes(); pollGaps(); }
     else if (act === 'go' && k) { gdlg.close(); go(k); }
@@ -643,6 +670,73 @@ gdlg.addEventListener('change', async e => {
     else if (t.id === 'gplayer') gapCfg = await api('/api/gaps-config', { player: t.value.trim() }, 'PUT');
     else if (t.id === 'gcolor') gapCfg = await api('/api/gaps-config', { playerColor: t.value }, 'PUT');
   } catch (err) { toast((err as Error).message); renderGapCfg(); }
+});
+
+// ---------- Partien (Abgleich mit den eigenen Lichess-Partien)
+interface GameRef { id: string; color: Rep; ply: number; date: number; opponent: string }
+interface Deviation { kind: 'own' | 'opp'; key: string; san: string; uci: string; book: string[]; count: number; games: GameRef[] }
+interface CheckResult { games: number; clean: number; deviations: Deviation[] }
+const checks: Record<Rep, CheckResult | null> = { white: null, black: null };
+const MAXES = [50, 100, 300];
+let gmMax = 100, gmBusy = false, gmErr = '';
+try { const m = Number(localStorage.getItem('cbgmax')); if (MAXES.includes(m)) gmMax = m; } catch { /* ignorieren */ }
+const pdlg = $<HTMLDialogElement>('#pdlg');
+const day = (t: number) => new Date(t).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+function renderGmCfg() {
+  $('#phead').innerHTML = `<h2>Partien · ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>`;
+  $('#pcfg').innerHTML = (gapCfg ? tokenHtml(gapCfg) : '') +
+    `<div class="sec">Letzte Partien</div><div class="seg" id="pmax">${MAXES.map(n => `<button data-max="${n}"${n === gmMax ? ' class="on"' : ''}>${n}</button>`).join('')}</div>`;
+}
+// Stellungen, die nicht (mehr) im Repertoire sind, werden ausgelassen
+function renderGmRes() {
+  const r = checks[rep], b = $<HTMLButtonElement>('#pchk');
+  b.disabled = !gapCfg?.tokenSet || gmBusy; b.classList.toggle('busy', gmBusy);
+  b.innerHTML = gmBusy ? '<span class="spin s"></span>Abgleich läuft …' : checks.white || checks.black ? 'Erneut abgleichen' : 'Abgleichen';
+  let h = gmErr ? `<div class="sec"></div><div class="note err">${esc(gmErr)}</div>` : '';
+  if (r) {
+    const sum = (k: Deviation['kind']) => r.deviations.reduce((a, d) => a + (d.kind === k ? d.count : 0), 0);
+    h += `<div class="sec"></div><div class="kpis k4">${kpi(r.games, 'Partien')}${kpi(r.clean, 'ohne Abweichung')}${kpi(sum('own'), 'du weichst ab')}${kpi(sum('opp'), 'Gegner weicht ab')}</div>`;
+    for (const [kind, title] of [['own', 'Deine Abweichungen'], ['opp', 'Gegnerzüge']] as const) {
+      const ds = r.deviations.filter(d => d.kind === kind && S.positions[d.key]);
+      if (!ds.length) continue;
+      h += `<div class="sec">${title}${ds.length > 100 ? ' <span>Top 100</span>' : ''}</div><div class="list">`;
+      for (const d of ds.slice(0, 100)) {
+        const ply = pathTo(d.key).length + 1, side = ply % 2 ? 'w' : 'b', g = d.games[0];
+        const num = `${Math.ceil(ply / 2)}${side === 'w' ? '.' : '...'}`;
+        const opps = [...new Set(d.games.map(x => x.opponent))].join(', ');
+        const book = kind === 'own' && d.book.length ? `<span class="bk">statt ${d.book.map(s => sanHtml(side, s)).join(', ')}</span>` : '';
+        const link = g ? `<a class="btn sm" href="https://lichess.org/${encodeURIComponent(g.id)}/${g.color === 'black' ? 'black' : 'white'}#${Number(g.ply) || 0}" target="_blank" rel="noopener" title="${esc(g.opponent)}">↗</a>` : '';
+        h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(d.key))}</div><div class="gm"><span class="mv">${num}${sanHtml(side, d.san)}</span>${book}
+          <span class="gs" title="${esc(opps)}">${de(d.count)}×${g ? ' · ' + day(g.date) : ''}</span></div></div>
+          <div class="ga"><button class="sm" data-act="go" data-k="${esc(d.key)}">Hingehen</button>${kind === 'opp' ? `<button class="sm soft" data-act="add" data-k="${esc(d.key)}" data-san="${esc(d.san)}">Eintragen</button>` : ''}${link}</div></div>`;
+      }
+      h += '</div>';
+    }
+  }
+  $('#pres').innerHTML = h;
+}
+$('#gms').onclick = async () => {
+  try { gapCfg = await api('/api/gaps-config'); editToken = false; gmErr = ''; renderGmCfg(); renderGmRes(); pdlg.showModal(); } catch (e) { toast((e as Error).message); }
+};
+$('#pclose').onclick = () => pdlg.close();
+pdlg.addEventListener('click', async e => {
+  const b = (e.target as HTMLElement).closest('button'); const act = b?.dataset.act; const k = b?.dataset.k;
+  try {
+    if (await tokenAct(act, b)) { renderGmCfg(); renderGmRes(); }
+    else if (b?.dataset.max) { gmMax = Number(b.dataset.max); try { localStorage.setItem('cbgmax', String(gmMax)); } catch { /* ignorieren */ } renderGmCfg(); }
+    else if (b?.id === 'pchk') {
+      gmBusy = true; gmErr = ''; renderGmRes();
+      try { const r = await api('/api/games/check', { max: gmMax }); checks.white = r.white; checks.black = r.black; } catch (err) { gmErr = (err as Error).message; } finally { gmBusy = false; }
+      renderGmRes();
+    }
+    else if (act === 'go' && k) { pdlg.close(); go(k); }
+    else if (act === 'add' && k && b?.dataset.san) {
+      const san = b.dataset.san;
+      await api('/api/move-san', { rep, from: k, san });
+      const r = checks[rep]; if (r) r.deviations = r.deviations.filter(d => !(d.kind === 'opp' && d.key === k && d.san === san));
+      await load(); renderGmRes(); refresh();
+    }
+  } catch (err) { toast((err as Error).message); }
 });
 
 // ---------- Hell/Dunkel

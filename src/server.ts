@@ -6,6 +6,7 @@ import { Store, type Rep } from './db';
 import { ExplorerClient, type ExplorerProgress } from './explorer';
 import { scanGaps, type Gap, type OwnGap } from './gaps';
 import { loadConfig, saveConfig, patchConfig } from './config';
+import { fetchGames, checkGames } from './games';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -52,6 +53,20 @@ function startScan(rep: Rep): Job {
   return job;
 }
 
+// Abgleich mit den eigenen Lichess-Partien: höchstens einer gleichzeitig
+let checking = false;
+async function checkOwnGames(max: unknown) {
+  const n = max === undefined ? 100 : Number(max);
+  if (!Number.isInteger(n) || n < 10 || n > 500) throw new Error('Anzahl der Partien muss zwischen 10 und 500 liegen.');
+  if (!config.lichessToken) throw new Error('Bitte zuerst einen Lichess-Token eintragen.');
+  if (checking) throw new Error('Es läuft bereits ein Abgleich.');
+  checking = true;
+  try {
+    const { user, games } = await fetchGames({ token: config.lichessToken, max: n, baseUrl: process.env.CHESSBOOK_LICHESS_URL });
+    return { user, white: checkGames(store.state('white'), 'white', user, games), black: checkGames(store.state('black'), 'black', user, games) };
+  } finally { checking = false; }
+}
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png',
@@ -87,6 +102,7 @@ const server = http.createServer(async (req, res) => {
           res.writeHead(200, { 'content-type': 'application/x-chess-pgn; charset=utf-8' });
           return res.end(store.exportPgn(rep(p.slice(16))));
         }
+        if (p.startsWith('/api/train-stats/')) return send(res, 200, store.trainStats(rep(p.slice(17))));
         if (p.startsWith('/api/state/')) return send(res, 200, store.state(rep(p.slice(11))));
         return send(res, 404, { error: 'Unbekannte Route' });
       }
@@ -99,8 +115,17 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, store.reorderMove(rep(b.rep), String(b.from), String(b.to), d));
       }
       if (req.method === 'POST' && p === '/api/delete') return send(res, 200, store.deleteNodes(rep(b.rep), Array.isArray(b.keys) ? b.keys.map(String) : [String(b.key)], !!b.dry));
+      if (req.method === 'POST' && p === '/api/train-result') {
+        if (typeof b.ok !== 'boolean') throw new Error('ok muss true oder false sein');
+        return send(res, 200, store.recordTrain(rep(b.rep), String(b.key), b.ok));
+      }
+      if (req.method === 'POST' && p === '/api/train-reset') {
+        if (b.keys !== undefined && !Array.isArray(b.keys)) throw new Error('keys muss eine Liste sein');
+        return send(res, 200, store.resetTrain(rep(b.rep), b.keys?.map(String)));
+      }
       if (req.method === 'PUT' && p === '/api/gaps-config') { config = patchConfig(config, b); saveConfig(CONFIG_FILE, config); return send(res, 200, publicConfig()); }
       if (req.method === 'POST' && p === '/api/gaps/scan') return send(res, 200, startScan(rep(b.rep)));
+      if (req.method === 'POST' && p === '/api/games/check') return send(res, 200, await checkOwnGames(b.max));
       if (req.method === 'POST' && p === '/api/move-san') return send(res, 200, store.addSan(rep(b.rep), String(b.from), String(b.san)));
       if (req.method === 'PUT' && p === '/api/shapes') { store.setShapes(rep(b.rep), String(b.key), b.shapes); return send(res, 200, { ok: true }); }
       if (req.method === 'PUT' && p === '/api/note') { store.setNote(rep(b.rep), String(b.key), b.note); return send(res, 200, { ok: true }); }

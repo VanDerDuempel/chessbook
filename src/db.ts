@@ -8,6 +8,7 @@ import { START_KEY, START_FEN, fromFen, keyOf, playUci, playSan, type Played } f
 export type Rep = 'white' | 'black';
 export interface Shape { orig: string; dest?: string; brush: string }
 export interface MoveRow { san: string; uci: string; to: string }
+export interface TrainStat { ok: number; bad: number; streak: number; last: number }
 export interface State {
   root: string;
   positions: Record<string, { fen: string; shapes: Shape[]; note?: string }>;
@@ -30,7 +31,12 @@ CREATE TABLE IF NOT EXISTS moves(
 CREATE INDEX IF NOT EXISTS moves_to ON moves(repertoire,to_key);
 CREATE TABLE IF NOT EXISTS explorer_cache(
   key TEXT NOT NULL, cfg TEXT NOT NULL, fetched_at INTEGER NOT NULL, data TEXT NOT NULL,
-  PRIMARY KEY(key,cfg));`;
+  PRIMARY KEY(key,cfg));
+CREATE TABLE IF NOT EXISTS train_stats(
+  repertoire TEXT NOT NULL, key TEXT NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 0, bad INTEGER NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0, last INTEGER NOT NULL,
+  PRIMARY KEY(repertoire,key),
+  FOREIGN KEY(repertoire,key) REFERENCES positions(repertoire,key) ON DELETE CASCADE);`;
 
 export class Store {
   private readonly db: Database.Database;
@@ -155,6 +161,33 @@ export class Store {
       rows.forEach((r, n) => up.run(n + 1, rep, from, r.uci));
       return { order: rows.map(r => r.to_key) };
     })();
+  }
+
+  /** Trainingsstatistik pro Stellung (nicht Teil von Export/Import). */
+  trainStats(rep: Rep): Record<string, TrainStat> {
+    const out: Record<string, TrainStat> = {};
+    for (const r of this.db.prepare('SELECT key,ok,bad,streak,last FROM train_stats WHERE repertoire=?').all(rep) as any[])
+      out[r.key] = { ok: r.ok, bad: r.bad, streak: r.streak, last: r.last };
+    return out;
+  }
+
+  /** Ergebnis einer Abfrage eintragen: richtig verlängert die Serie, falsch setzt sie zurück. */
+  recordTrain(rep: Rep, key: string, ok: boolean): TrainStat {
+    this.fenOf(rep, key);
+    const [o, b] = ok ? [1, 0] : [0, 1];
+    return this.db.prepare(
+      `INSERT INTO train_stats(repertoire,key,ok,bad,streak,last) VALUES(?,?,?,?,?,?)
+       ON CONFLICT(repertoire,key) DO UPDATE SET ok=ok+excluded.ok, bad=bad+excluded.bad,
+         streak=CASE WHEN excluded.ok THEN streak+1 ELSE 0 END, last=excluded.last
+       RETURNING ok,bad,streak,last`
+    ).get(rep, key, o, b, o, Date.now()) as TrainStat;
+  }
+
+  /** Statistik für die angegebenen Stellungen bzw. das ganze Repertoire löschen. */
+  resetTrain(rep: Rep, keys?: string[]) {
+    if (!keys) return { removed: this.db.prepare('DELETE FROM train_stats WHERE repertoire=?').run(rep).changes };
+    const del = this.db.prepare('DELETE FROM train_stats WHERE repertoire=? AND key=?');
+    return { removed: this.db.transaction(() => keys.reduce((n, k) => n + del.run(rep, k).changes, 0))() };
   }
 
   setShapes(rep: Rep, key: string, shapes: Shape[]) {
