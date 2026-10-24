@@ -22,8 +22,8 @@ let marked = new Set<string>();
 let promo: { from: string; to: string; color: string } | null = null;
 let settingShapes = false;
 // Training: Startstellungen, aktuelle Ausgangsstellung, Zähler, Fehler in dieser Stellung, Lösung zeigen, besuchte Stellungen (in Zugreihenfolge) und gespielte Züge der Variante,
-// Variante bisher fehlerfrei, erledigte Stellungen dieser Runde, Timer
-let tr: { starts: string[]; start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; t: number } | null = null;
+// Variante bisher fehlerfrei, erledigte Stellungen dieser Runde, im Graphen aufgedeckte und rot markierte Stellungen, Rundenende, Timer
+let tr: { starts: string[]; start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; shown: Set<string>; red: Set<string>; round: boolean; t: number } | null = null;
 const flips: Record<Rep, boolean> = { white: false, black: false };
 try { Object.assign(flips, JSON.parse(localStorage.getItem('cbflip') ?? '{}')); } catch { /* ignorieren */ }
 const orientation = (): Rep => (flips[rep] ? (rep === 'white' ? 'black' : 'white') : rep);
@@ -183,7 +183,8 @@ async function doDelete(keys: string[]) {
 const G = $('#graph');
 function drawGraph() {
   hidePv();
-  G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys, marked);
+  const rv = tr && { shown: tr.shown, ok: tr.done, bad: new Set([...tr.red].filter(k => !tr!.done.has(k))) };
+  G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys, marked, rv || undefined);
   focusCur();
 }
 // Aktuelle Stellung mittig zeigen; in der Startstellung den ersten Zug der Hauptvariante oben
@@ -208,7 +209,7 @@ let pan: { x: number; y: number; l: number; t: number } | null = null, moved = f
 G.addEventListener('wheel', e => { e.preventDefault(); hidePv(); const r = G.getBoundingClientRect(); zoomTo(zoom * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
 G.addEventListener('pointerdown', e => {
   hidePv(); if (e.button) return; moved = false;
-  if (e.ctrlKey || e.metaKey) { const p = toGraph(e.clientX, e.clientY); if (p) lasso = { x: p.x, y: p.y, sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, id: e.pointerId, hit: new Set() }; return; }
+  if ((e.ctrlKey || e.metaKey) && !tr) { const p = toGraph(e.clientX, e.clientY); if (p) lasso = { x: p.x, y: p.y, sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, id: e.pointerId, hit: new Set() }; return; }
   pan = { x: e.clientX, y: e.clientY, l: G.scrollLeft, t: G.scrollTop };
 });
 G.addEventListener('pointermove', e => {
@@ -255,7 +256,7 @@ addEventListener('keydown', e => { if (e.key === 'Escape' && lasso) { e.stopImme
 // Strg/Cmd+Klick markiert, normaler Klick navigiert und hebt die Markierung auf
 G.addEventListener('click', e => {
   if (moved) { moved = false; return; }
-  const k = attr(e.target as Element, 'data-k'); if (!k) return;
+  const k = attr(e.target as Element, 'data-k'); if (!k || tr) return;
   if (e.ctrlKey || e.metaKey) { if (!marked.delete(k)) marked.add(k); } else marked.clear();
   showMarks(); if (!e.ctrlKey && !e.metaKey) go(k);
 });
@@ -272,7 +273,7 @@ const PV = document.createElement('div'); PV.className = 'pv'; PV.hidden = true;
 let pvKey: string | null = null;
 function hidePv() { PV.hidden = true; pvKey = null; }
 G.addEventListener('mousemove', e => {
-  const k = pan || lasso ? null : attr(e.target as Element, 'data-k');
+  const k = pan || lasso || tr ? null : attr(e.target as Element, 'data-k');
   if (!k || !S.positions[k]) { hidePv(); return; }
   if (pvKey !== k) { pvKey = k; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}</div>`; }
   let x = e.clientX + 18, y = e.clientY + 18;
@@ -289,7 +290,7 @@ let cmKeys: string[] = [];
 G.addEventListener('contextmenu', e => {
   e.preventDefault();
   const k = attr(e.target as Element, 'data-k');
-  if (!k) { CM.hidden = true; return; }
+  if (!k || tr) { CM.hidden = true; return; }
   cmKeys = marked.has(k) ? [...marked] : [k];
   const n = cmKeys.length > 1 ? cmKeys.length + ' ' : '';
   CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button><button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
@@ -385,6 +386,8 @@ split.addEventListener('dblclick', () => { setBw(null); try { localStorage.remov
 // Der Gegner spielt zufällig einen seiner Repertoirezüge, man selbst muss einen eigenen finden.
 // Am Ende einer Variante geht es zurück zur Ausgangsstellung. Fehlerfrei gespielte Varianten kommen in dieser Runde nicht wieder,
 // sind alle geschafft, beginnt eine neue Runde. Nichts wird gespeichert.
+// Der Graph deckt sich dabei auf: gespielte Stellungen erscheinen, nach einem Fehler nur bis zur Fehlerstelle (rot),
+// fehlerfrei geschaffte werden grün. Mit einer neuen Runde ist er wieder verdeckt (bis auf die Startstellungen).
 // Mit markierten Knoten (oder per Rechtsklick) geht es ab diesen Stellungen, sonst ab der aktuellen.
 function toggleTrain() { if (tr) stopTrain(); else startTrain(marked.size ? [...marked] : undefined); }
 function startTrain(from?: string[]) {
@@ -392,7 +395,8 @@ function startTrain(from?: string[]) {
   if (!starts.length) { toast(from ? 'Ab hier keine Züge' : 'Noch keine Züge im Repertoire'); return; }
   CM.hidden = true; pending = null; promo = null;
   const start = starts.includes(cur) ? cur : starts[Math.floor(Math.random() * starts.length)];
-  tr = { starts, start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), t: 0 };
+  tr = { starts, start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), shown: new Set(), red: new Set(), round: false, t: 0 };
+  tr.shown = baseShown(tr.starts);
   document.body.classList.add('train');
   if (start !== cur) { stack.push(cur); fwd = []; cur = start; }
   refresh(); trStep();
@@ -406,9 +410,9 @@ function trStep() {
   const ms = (S.moves[cur] ?? []).filter(m => !t.seen.has(m.to));
   if (!ms.length) {
     if (t.clean) markDone(S, rep, [...t.seen], t.done);
-    const all = t.starts.every(k => t.done.has(k));
-    if (all) { t.done.clear(); toast('Alle Varianten geschafft · neue Runde'); }
-    flash('done'); t.t = window.setTimeout(trRestart, all ? 1600 : 900); return;
+    const all = t.round = t.starts.every(k => t.done.has(k));
+    if (all) toast('Alle Varianten geschafft · neue Runde');
+    flash('done'); drawGraph(); t.t = window.setTimeout(trRestart, all ? 1600 : 900); return;
   }
   if (fromFen(S.positions[cur].fen).turn !== rep) {
     const c = openMoves(S, cur, t.seen, t.done);
@@ -417,10 +421,11 @@ function trStep() {
 }
 function trGo(k: string, san: string) {
   const t = tr; if (!t) return;
-  t.seen.add(k); t.line.push([k, san]); t.miss = t.hint = false; go(k); trStep();
+  t.seen.add(k); t.line.push([k, san]); if (t.clean) t.shown.add(k); t.miss = t.hint = false; go(k); trStep();
 }
 function trRestart() {
   const t = tr; if (!t) return;
+  if (t.round) { t.round = false; t.done.clear(); t.red.clear(); t.shown = baseShown(t.starts); }
   const open = t.starts.filter(k => !t.done.has(k));
   t.start = open[Math.floor(Math.random() * open.length)] ?? t.starts[0];
   t.seen = new Set([t.start]); t.line = pathTo(t.start); t.miss = t.hint = false; t.clean = true; fwd = [];
@@ -431,9 +436,11 @@ function trMove(uci: string) {
   const t = tr!, p = playUci(fromFen(S.positions[cur].fen), uci);
   const m = p && S.moves[cur]?.find(x => x.uci === p.uci);
   if (m) { if (!t.miss) t.ok++; flash('ok'); trGo(m.to, m.san); return; }
-  if (!t.miss) { t.bad++; t.miss = true; t.clean = false; }
+  if (!t.miss) { t.bad++; t.miss = true; if (t.clean) t.red.add(cur); t.clean = false; }
   t.hint = true; flash('bad'); refresh();
 }
+// Startstellungen samt Weg dorthin sind immer sichtbar
+function baseShown(starts: string[]) { return new Set(starts.flatMap(k => [k, ...pathTo(k).map(([x]) => x)])); }
 function flash(c: 'ok' | 'bad' | 'done') {
   const el = $('#bw'); el.classList.remove('ok', 'bad', 'done'); void el.offsetWidth; el.classList.add(c);
 }

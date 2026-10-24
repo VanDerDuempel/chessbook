@@ -64,14 +64,17 @@ export function sanHtml(side: 'w' | 'b', san: string): string {
   return m ? `<img src="pieces/${side}${m[1]}.svg" alt="${m[1]}">${m[2]}` : san;
 }
 
-export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gaps?: Set<string>, marked?: Set<string>): string {
+/** Training: nur aufgedeckte Stellungen zeigen, geschaffte grün, Fehlerstellen rot (rot hat Vorrang). */
+export interface Reveal { shown: Set<string>; ok: Set<string>; bad: Set<string> }
+
+export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gaps?: Set<string>, marked?: Set<string>, rv?: Reveal): string {
   if (!Object.keys(L.pos).length) return '<div class="empty">Noch keine Züge</div>';
   const pathEdges = new Set<string>(), pathNodes = new Set<string>();
   for (let x = cur; L.parent[x] !== undefined; x = L.parent[x]) { pathEdges.add(L.parent[x] + '>' + x); pathNodes.add(x); }
   let normal = '', onPath = '', hot = '';
   for (const k of Object.keys(L.pos)) for (const m of st.moves[k] ?? []) {
     const a = L.pos[k], z = L.pos[m.to];
-    if (!z) continue;
+    if (!z || (rv && !(rv.shown.has(k) && rv.shown.has(m.to)))) continue;
     const up = m.to === cur, dn = k === cur, pt = pathEdges.has(k + '>' + m.to);
     const my = (a.y + NODE_H + z.y) / 2, cx = NODE_W / 2;
     const e = `<path class="e${up ? ' up' : dn ? ' dn' : pt ? ' path' : ''}" d="M${a.x + cx} ${a.y + NODE_H}C${a.x + cx} ${my} ${z.x + cx} ${my} ${z.x + cx} ${z.y}"/>`;
@@ -79,7 +82,9 @@ export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gap
   }
   let nodes = '';
   for (const [k, p] of Object.entries(L.pos)) {
-    const cls = `n ${L.side[k]}${k === cur ? ' cur' : pathNodes.has(k) ? ' onpath' : ''}${marked?.has(k) ? ' sel' : ''}${gaps?.has(k) ? ' gp' : ''}`;
+    if (rv && !rv.shown.has(k)) continue;
+    const tr = rv ? (rv.bad.has(k) ? ' tbad' : rv.ok.has(k) ? ' tok' : '') : '';
+    const cls = `n ${L.side[k]}${k === cur ? ' cur' : pathNodes.has(k) ? ' onpath' : ''}${marked?.has(k) ? ' sel' : ''}${gaps?.has(k) ? ' gp' : ''}${tr}`;
     const inc = L.incoming[k] ?? 0;
     nodes += `<g class="${cls}" data-k="${k}"><rect x="${p.x}" y="${p.y}" width="${NODE_W}" height="${NODE_H}" rx="8"/><circle class="sd" cx="${p.x + 12}" cy="${p.y + NODE_H / 2}" r="4"/>` +
       `<foreignObject x="${p.x + 21}" y="${p.y + 2}" width="${NODE_W - 26}" height="${NODE_H - 4}"><div class="lab"><span class="mn">${L.num[k]}</span>${sanHtml(L.side[k], L.san[k])}</div></foreignObject>` +

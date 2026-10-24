@@ -227,9 +227,12 @@ dialog .drop textarea{display:block;height:140px;border:0;border-radius:0;backgr
   #split:hover::before,#split.drag::before{background:var(--accent);height:96px}
 }
 body.resizing{cursor:col-resize;user-select:none}
-/* Training: Graph verdeckt, Navigation gesperrt, Rückmeldung als Rahmen um das Brett */
+/* Training: Graph deckt sich auf (grün geschafft, rot Fehler), Navigation gesperrt, Rückmeldung als Rahmen um das Brett */
 #trn.on,#trn.on:hover:not(:disabled){background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-body.train #gwrap{filter:blur(9px);opacity:.5;pointer-events:none;user-select:none}
+body.train #graph .n{cursor:default}
+.n.tok rect{fill:color-mix(in srgb,var(--ok) 16%,var(--panel));stroke:var(--ok);stroke-width:1.5}
+.n.tbad rect{fill:color-mix(in srgb,var(--danger) 16%,var(--panel));stroke:var(--danger);stroke-width:2}
+.n.cur.tok rect,.n.cur.tbad rect{stroke-width:2.5}
 body.train :is(header .seg,#qs,#path,#lic,#dat,#gap,#pend){pointer-events:none;opacity:.45}
 #info b.ok{color:var(--ok)}#info b.bad{color:var(--danger);margin-left:6px}
 #bw::after{content:"";position:absolute;inset:0;z-index:3;pointer-events:none;border-radius:2px;opacity:0}

@@ -61,3 +61,16 @@ test('keysInRect: berührte Knoten zählen, Ecken in beliebiger Reihenfolge', ()
   assert.ok(!keysInRect(L, p.x, p.y, p.x + 1, p.y + 1).includes(b));
   assert.deepEqual(keysInRect(L, -50, -50, -10, -10), []);
 });
+
+test('Training: nur aufgedeckte Knoten und Kanten, rot vor grün', () => {
+  const s = fresh();
+  const nf3 = play(s, 'e4', 'e5', 'Nf3'); play(s, 'e4', 'c5'); play(s, 'd4', 'd5');
+  const st = s.state('white'), L = layout(st), e4 = st.moves[START_KEY][0].to, e5 = st.moves[e4][0].to;
+  const svg = renderGraph(L, st, e5, 1, undefined, undefined, { shown: new Set([e4, e5]), ok: new Set([e4, e5]), bad: new Set([e5]) });
+  const cls = (k: string) => { const i = svg.indexOf(`data-k="${k}"`); return svg.slice(svg.lastIndexOf('<g class="', i) + 10, i - 2).split(' '); };
+  assert.equal((svg.match(/<g class="n /g) ?? []).length, 2);
+  assert.equal((svg.match(/<path class="e/g) ?? []).length, 1);
+  assert.ok(!svg.includes(`data-k="${nf3}"`));
+  assert.ok(cls(e4).includes('tok') && !cls(e4).includes('tbad'));
+  assert.ok(cls(e5).includes('tbad') && !cls(e5).includes('tok'));
+});
