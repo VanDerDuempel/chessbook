@@ -6,6 +6,7 @@ import { Store, type Rep } from './db';
 import { ExplorerClient, type ExplorerProgress } from './explorer';
 import { scanGaps, type Gap, type OwnGap } from './gaps';
 import { loadConfig, saveConfig, patchConfig } from './config';
+import { fetchGames, checkGames } from './games';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -50,6 +51,20 @@ function startScan(rep: Rep): Job {
     .catch(e => { job.state = 'error'; job.message = (e as Error).message; })
     .finally(() => { scanning = false; });
   return job;
+}
+
+// Abgleich mit den eigenen Lichess-Partien: höchstens einer gleichzeitig
+let checking = false;
+async function checkOwnGames(max: unknown) {
+  const n = max === undefined ? 100 : Number(max);
+  if (!Number.isInteger(n) || n < 10 || n > 500) throw new Error('Anzahl der Partien muss zwischen 10 und 500 liegen.');
+  if (!config.lichessToken) throw new Error('Bitte zuerst einen Lichess-Token eintragen.');
+  if (checking) throw new Error('Es läuft bereits ein Abgleich.');
+  checking = true;
+  try {
+    const { user, games } = await fetchGames({ token: config.lichessToken, max: n, baseUrl: process.env.CHESSBOOK_LICHESS_URL });
+    return { user, white: checkGames(store.state('white'), 'white', user, games), black: checkGames(store.state('black'), 'black', user, games) };
+  } finally { checking = false; }
 }
 
 const MIME: Record<string, string> = {
@@ -101,6 +116,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && p === '/api/delete') return send(res, 200, store.deleteNodes(rep(b.rep), Array.isArray(b.keys) ? b.keys.map(String) : [String(b.key)], !!b.dry));
       if (req.method === 'PUT' && p === '/api/gaps-config') { config = patchConfig(config, b); saveConfig(CONFIG_FILE, config); return send(res, 200, publicConfig()); }
       if (req.method === 'POST' && p === '/api/gaps/scan') return send(res, 200, startScan(rep(b.rep)));
+      if (req.method === 'POST' && p === '/api/games/check') return send(res, 200, await checkOwnGames(b.max));
       if (req.method === 'POST' && p === '/api/move-san') return send(res, 200, store.addSan(rep(b.rep), String(b.from), String(b.san)));
       if (req.method === 'PUT' && p === '/api/shapes') { store.setShapes(rep(b.rep), String(b.key), b.shapes); return send(res, 200, { ok: true }); }
       if (req.method === 'POST' && p === '/api/import-json') {
