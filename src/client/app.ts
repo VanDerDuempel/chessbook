@@ -7,6 +7,7 @@ import { parseSquare } from 'chessops/util';
 import { fromFen, playUci, START_KEY } from '../core';
 import { layout, renderGraph, miniBoard, sanHtml, keysInRect, NODE_W, NODE_H, type Layout } from './graph';
 import { openMoves, markDone } from './train';
+import { findPosition } from './search';
 import type { State, Shape, Rep } from '../db';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
@@ -322,10 +323,35 @@ addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName) || ($('#dlg') as HTMLDialogElement).open) return;
   const f: Record<string, () => void> = tr
     ? { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, Escape: stopTrain }
-    : { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
+    : { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, '/': () => Q.focus(), ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
   if (f[e.key]) { e.preventDefault(); f[e.key](); } else if (e.key === 'Escape') { CM.hidden = true; clearMarks(); }
 });
 addEventListener('resize', () => cg.redrawAll());
+// Suche: FEN, Zugfolge oder PGN, springt zur Stellung bzw. zur letzten bekannten Stellung der Zugfolge.
+// Mehrzeiliges PGN wird beim Einfügen sofort gesucht; der Originaltext bleibt erhalten, weil das Feld Zeilenumbrüche verliert.
+const Q = $<HTMLInputElement>('#q');
+let qRaw: { shown: string; text: string } | null = null;
+function search(text: string) {
+  if (tr) return;
+  const r = findPosition(S, text);
+  $('#qs').classList.toggle('bad', 'error' in r);
+  if ('error' in r) { toast(r.error); return; }
+  if (r.played < r.total) toast(`${r.played}/${r.total} Züge im Repertoire`);
+  else { Q.value = ''; qRaw = null; Q.blur(); }
+  go(r.key);
+}
+Q.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { Q.value = ''; qRaw = null; Q.blur(); $('#qs').classList.remove('bad'); return; }
+  if (e.key === 'Enter') search(qRaw && qRaw.shown === Q.value ? qRaw.text : Q.value);
+});
+Q.addEventListener('paste', e => {
+  const t = e.clipboardData?.getData('text') ?? '';
+  if (!/[\r\n]/.test(t.trim())) return;
+  e.preventDefault();
+  Q.value = t.replace(/\s+/g, ' ').trim(); qRaw = { shown: Q.value, text: t };
+  search(t);
+});
+Q.addEventListener('input', () => $('#qs').classList.remove('bad'));
 // Ziehgriff: Brettbreite (Spalte links) per Maus, gespeichert; Doppelklick setzt zurück
 const top = $('.top'), split = $('#split');
 // Größte Spaltenbreite, bei der das Brett selbst noch ganz ins Fenster passt
