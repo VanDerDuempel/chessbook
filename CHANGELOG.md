@@ -13,6 +13,7 @@ Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 - Training ab markierten Stellungen: Rechtsklick auf einen Knoten bietet „Training ab hier“, bei mehreren markierten Knoten werden alle Varianten ab diesen Stellungen abgefragt. Button und Taste T nehmen ebenfalls die Markierung.
 
 ### Geändert
+- Lücken mit Quelle „Spieler“: Statt eines Textfelds gibt es wie im Spieler-Explorer auf Lichess eine Suche mit Vorschlägen. Gefundene Spieler werden angepinnt (bis zu 10), ein Klick auf einen Chip macht ihn zum aktiven Spieler (grün), × entpinnt. Der bisher eingetragene Spieler wird automatisch angepinnt.
 - Training: Fehlerfrei gespielte Varianten kommen in derselben Runde nicht wieder, Varianten mit Fehler schon. Sind alle geschafft, beginnt eine neue Runde. Vorher wählte der Gegner rein zufällig, sodass manche Varianten mehrfach und andere kaum drankamen.
 - Training: Der Graph ist nicht mehr verschwommen, sondern deckt sich beim Spielen auf. Fehlerfrei geschaffte Stellungen werden grün. Nach einem Fehler wird die Variante nur bis zur Fehlerstelle aufgedeckt, die rot bleibt, bis die Variante fehlerfrei nachgespielt ist. Jede neue Runde beginnt verdeckt.
 

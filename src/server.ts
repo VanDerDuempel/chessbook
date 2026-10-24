@@ -17,14 +17,14 @@ store.backup('start', 12 * 3600_000);
 // Lücken-Erkennung: Einstellungen (inkl. Lichess-Token) liegen nur lokal in data/config.json
 const CONFIG_FILE = path.join(path.dirname(DB_FILE), 'config.json');
 let config = loadConfig(CONFIG_FILE);
-const publicConfig = () => ({ tokenSet: !!config.lichessToken, source: config.source, player: config.player, playerColor: config.playerColor, thresholds: config.thresholds, accounts: config.accounts });
+const publicConfig = () => ({ tokenSet: !!config.lichessToken, source: config.source, player: config.player, players: config.players, playerColor: config.playerColor, thresholds: config.thresholds, accounts: config.accounts });
 // indexing: Lichess liest den Spieler gerade ein (Warteschlange, bisher gezählte Partien), sonst null
 interface Job { state: 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: Gap[]; own: OwnGap[]; source: string; player: string; color: string; indexing: ExplorerProgress | null }
 const jobs: Partial<Record<Rep, Job>> = {};
 let scanning = false;
 function startScan(rep: Rep): Job {
   if (scanning) throw new Error('Es läuft bereits eine Suche. Bitte warten.');
-  if (config.source === 'player' && !config.player) throw new Error('Bitte zuerst einen Spielernamen eingeben.');
+  if (config.source === 'player' && !config.player) throw new Error('Bitte zuerst einen Spieler auswählen.');
   scanning = true;
   // Beim Spieler gilt standardmäßig die Seite des Gegners: bei deinem Weiß-Repertoire seine Partien mit Schwarz und umgekehrt
   const color = config.playerColor === 'auto' ? (rep === 'white' ? 'black' : 'white') : config.playerColor;

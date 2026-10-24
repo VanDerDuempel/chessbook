@@ -168,6 +168,23 @@ test('Einstellungen: Lichess-Accounts als Liste oder Text, ohne Duplikate', () =
   assert.deepEqual(loadConfig(file + '.fehlt').accounts, []);
 });
 
+test('Einstellungen: angepinnte Spieler, der aktive ist immer dabei', () => {
+  assert.deepEqual(DEFAULTS.players, []);
+  assert.deepEqual(patchConfig(DEFAULTS, { players: 'Abc, ABC de_f' }).players, ['Abc', 'de_f']);
+  assert.throws(() => patchConfig(DEFAULTS, { players: ['gut', 'x y'] }), /Spieler/);
+  assert.throws(() => patchConfig(DEFAULTS, { players: Array.from({ length: 11 }, (_, i) => 'pl' + i) }), /10/);
+  const c = patchConfig(DEFAULTS, { players: ['Abc'], player: 'neu_1' });
+  assert.deepEqual([c.player, c.players], ['neu_1', ['Abc', 'neu_1']]);
+  assert.deepEqual(patchConfig(c, { player: 'abc' }).players, ['Abc', 'neu_1']);      // schon angepinnt, Groß/Klein egal
+  const off = patchConfig(c, { players: ['Abc'], player: '' });                      // aktiven entpinnen
+  assert.deepEqual([off.player, off.players], ['', ['Abc']]);
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbc-')), 'config.json');
+  fs.writeFileSync(file, JSON.stringify({ player: 'Alt_1', players: ['Abc', 'abc', 3] }));
+  assert.deepEqual(loadConfig(file).players, ['Alt_1', 'Abc']);                     // alte Config: Spieler wird vorne angepinnt
+  fs.writeFileSync(file, JSON.stringify({ player: 'Alt_1' }));
+  assert.deepEqual(loadConfig(file).players, ['Alt_1']);
+});
+
 test('Einstellungen: alte Datei mit minShare/minGames wird auf Schwellen pro Quelle umgestellt', () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbc-')), 'config.json');
   fs.writeFileSync(file, JSON.stringify({ source: 'masters', minShare: 0.5, minGames: 300, minReach: 0.01 }));

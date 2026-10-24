@@ -525,10 +525,97 @@ $('#imp').onclick = async () => {
   } catch (e) { out.innerHTML = `<div class="note err">Fehler: ${e instanceof SyntaxError ? 'JSON fehlerhaft' : esc((e as Error).message)}</div>`; }
 };
 
+// ---------- Lichess-Namen suchen (wie auf Lichess) und anpinnen, geteilt von Lücken und Partien
+interface LichessUser { name: string; title?: string }
+interface PinOpts { id: string; ph: string; pinned(): string[]; active?(): string; pin(n: string): Promise<void>; unpin(n: string): Promise<void>; select?(n: string): Promise<void> }
+const xIcon = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>';
+const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+/** Suchfeld mit Vorschlagsliste und Chips im Dialog `dlg`. Die Handler hängen einmal am Dialog, html() liefert das Markup bei jedem Neuzeichnen. */
+function pinBox(dlg: HTMLDialogElement, o: PinOpts) {
+  let list: LichessUser[] = [], idx = -1, seq = 0, timer = 0, escNow = false;
+  const q = () => dlg.querySelector<HTMLInputElement>(`#${o.id}q`), l = () => dlg.querySelector<HTMLElement>(`#${o.id}l`);
+  const isPinned = (n: string) => o.pinned().some(a => sameName(a, n));
+  function renderList() {
+    const el = l(), inp = q(); if (!el || !inp) return;
+    const open = list.length > 0;
+    el.hidden = !open; inp.setAttribute('aria-expanded', String(open));
+    // Fest am Suchfeld ausrichten, damit die Liste über den Dialogrand hinausragen darf statt abgeschnitten zu werden
+    if (open) { const r = inp.closest('.acq')!.getBoundingClientRect(); Object.assign(el.style, { left: r.left + 'px', top: r.bottom + 4 + 'px', width: r.width + 'px' }); }
+    el.innerHTML = list.map((u, i) => `<button type="button" role="option" data-pin="${esc(u.name)}"${i === idx ? ' class="on" aria-selected="true"' : ''}>${u.title ? `<span class="ttl">${esc(u.title)}</span>` : ''}${esc(u.name)}</button>`).join('');
+    el.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+  }
+  function render() {
+    const inp = q(), box = dlg.querySelector(`#${o.id}p`); if (!inp || !box) return;
+    const ns = o.pinned(), act = o.active?.() ?? '';
+    inp.disabled = ns.length >= 10;
+    box.innerHTML = ns.map(n => {
+      const on = !!act && sameName(n, act);
+      const name = o.select ? `<button type="button" class="nm" data-sel="${esc(n)}"${on ? ' aria-pressed="true"' : ' title="Auswählen"'}>${esc(n)}</button>` : esc(n);
+      return `<span class="pin${on ? ' on' : ''}">${name}<button type="button" data-unpin="${esc(n)}" title="Entpinnen" aria-label="Entpinnen">${xIcon}</button></span>`;
+    }).join('');
+  }
+  const close = () => { clearTimeout(timer); seq++; list = []; idx = -1; renderList(); };
+  async function search(term: string) {
+    const n = ++seq;
+    try {
+      const r = await api('/api/lichess/users?term=' + encodeURIComponent(term));
+      if (n !== seq) return;   // veraltete Antwort
+      list = (r.users as LichessUser[]).filter(u => !isPinned(u.name)); idx = -1; renderList();
+    } catch (e) { if (n === seq) toast((e as Error).message); }
+  }
+  async function run(f: () => Promise<void>) { try { await f(); } catch (e) { toast((e as Error).message); } render(); }
+  async function pin(name: string) {
+    close(); const inp = q(); if (inp) inp.value = '';
+    if (!isPinned(name)) await run(() => o.pin(name));
+    q()?.focus();
+  }
+  const mine = (e: Event) => (e.target as HTMLElement).id === o.id + 'q';
+  dlg.addEventListener('input', e => {
+    if (!mine(e)) return;
+    const v = (e.target as HTMLInputElement).value.trim();
+    close();
+    if (v.length >= 3) timer = window.setTimeout(() => search(v), 250);
+  });
+  dlg.addEventListener('keydown', e => {
+    if (!mine(e)) return;
+    const n = list.length;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!n) return;
+      e.preventDefault(); idx = e.key === 'ArrowDown' ? (idx + 1) % n : (idx <= 0 ? n : idx) - 1; renderList();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const v = (e.target as HTMLInputElement).value.trim(), u = list[idx] ?? list.find(x => sameName(x.name, v)) ?? list[0];
+      if (u) pin(u.name);
+    } else if (e.key === 'Escape' && n) {
+      // nur die Liste schließen, nicht den Dialog
+      e.preventDefault(); e.stopPropagation(); escNow = true; setTimeout(() => { escNow = false; }); close();
+    }
+  });
+  dlg.addEventListener('cancel', e => { if (escNow) e.preventDefault(); });
+  dlg.addEventListener('focusout', e => { if (mine(e)) close(); });
+  dlg.addEventListener('scroll', e => { if (list.length && e.target !== l()) close(); }, true);   // fest positionierte Liste würde sonst verrutschen
+  dlg.addEventListener('mousedown', e => { if ((e.target as HTMLElement).closest(`#${o.id}l`)) e.preventDefault(); });   // Fokus im Suchfeld lassen
+  dlg.addEventListener('click', e => {
+    const b = (e.target as HTMLElement).closest('button');
+    if (!b?.closest(`#${o.id}l, #${o.id}p`)) return;
+    if (b.dataset.pin) pin(b.dataset.pin);
+    else if (b.dataset.unpin) { const n = b.dataset.unpin; run(() => o.unpin(n)); }
+    else if (b.dataset.sel && o.select) { const n = b.dataset.sel; run(() => o.select!(n)); }
+  });
+  return {
+    render,
+    html: () => {
+      close();
+      return `<div class="acs"><label class="acq"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>` +
+        `<input id="${o.id}q" type="search" placeholder="${o.ph}" maxlength="30" autocomplete="off" spellcheck="false" role="combobox" aria-controls="${o.id}l" aria-expanded="false"></label><div id="${o.id}l" class="acl" role="listbox" hidden></div></div><div id="${o.id}p" class="pins"></div>`;
+    },
+  };
+}
+
 // ---------- Lücken-Erkennung (Vergleich mit den häufigsten Zügen auf Lichess)
 interface GapRow { key: string; san: string; games: number; share: number; reach: number }
 interface GapJob { state: 'none' | 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: GapRow[]; own: { key: string; reach: number }[]; source: string; player: string; color: string; indexing?: { queue: number | null; games: number } | null }
-interface GapCfg { tokenSet: boolean; source: 'masters' | 'lichess' | 'player'; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds?: Partial<Record<GapCfg['source'], { minShare: number; minGames: number }>>; accounts?: string[] }
+interface GapCfg { tokenSet: boolean; source: 'masters' | 'lichess' | 'player'; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds?: Partial<Record<GapCfg['source'], { minShare: number; minGames: number }>>; accounts?: string[]; players?: string[] }
 const gapJobs: Record<Rep, GapJob | null> = { white: null, black: null };
 let gapKeys = new Set<string>(), gapCfg: GapCfg | null = null, gapTimer = 0, editToken = false;
 const gdlg = $<HTMLDialogElement>('#gdlg');
@@ -570,13 +657,23 @@ function renderGapCfg() {
   $('#gcfg').innerHTML = tokenHtml(c) +
     `<div class="sec">Quelle</div><div class="seg" id="gsrc">${seg}</div>` +
     (c.source === 'player'
-      ? `<div class="grid2"><label class="fld"><span class="lb">Spieler</span><input id="gplayer" type="text" value="${esc(c.player)}" placeholder="Lichess-Name" maxlength="30" autocomplete="off"></label>
+      ? `<div class="grid2 one"><div class="fld"><span class="lb">Spieler</span>${playerBox.html()}</div>
          <label class="fld"><span class="lb">Farbe</span><select id="gcolor">${sel('auto', 'Gegnerseite (' + opp + ')')}${sel('white', 'Weiß')}${sel('black', 'Schwarz')}</select></label></div>`
       : '') +
     `<div class="sec">Schwellen</div>
      <div class="grid2"><label class="fld"><span class="lb">Min. Anteil</span><span class="unit"><input id="gshare" type="number" min="1" max="50" value="${Math.round(t.minShare * 100)}"><i>%</i></span></label>
        <label class="fld"><span class="lb">Min. Partien</span><input id="ggames" type="number" min="1" value="${t.minGames}"></label></div>`;
+  playerBox.render();
 }
+// Spieler wie im Spieler-Explorer auf Lichess: suchen, anpinnen, per Klick auswählen
+const putPlayers = async (p: { players?: string[]; player?: string }) => { gapCfg = await api('/api/gaps-config', p, 'PUT'); };
+const playerBox = pinBox(gdlg, {
+  id: 'gpl', ph: 'Spieler suchen',
+  pinned: () => gapCfg?.players ?? [], active: () => gapCfg?.player ?? '',
+  pin: n => putPlayers({ players: [...(gapCfg?.players ?? []), n], player: n }),
+  unpin: n => putPlayers({ players: (gapCfg?.players ?? []).filter(a => a !== n), ...(sameName(n, gapCfg?.player ?? '') ? { player: '' } : {}) }),
+  select: n => putPlayers({ player: n }),
+});
 function renderGapRes() {
   const j = gapJobs[rep]; let h = '';
   const run = j?.state === 'running', scan = $('#gscan') as HTMLButtonElement;
@@ -639,7 +736,6 @@ gdlg.addEventListener('change', async e => {
   try {
     if (t.id === 'gshare') gapCfg = await api('/api/gaps-config', { thresholds: { [gapCfg?.source ?? 'masters']: { minShare: Number(t.value) / 100 } } }, 'PUT');
     else if (t.id === 'ggames') gapCfg = await api('/api/gaps-config', { thresholds: { [gapCfg?.source ?? 'masters']: { minGames: Number(t.value) } } }, 'PUT');
-    else if (t.id === 'gplayer') gapCfg = await api('/api/gaps-config', { player: t.value.trim() }, 'PUT');
     else if (t.id === 'gcolor') gapCfg = await api('/api/gaps-config', { playerColor: t.value }, 'PUT');
   } catch (err) { toast((err as Error).message); renderGapCfg(); }
 });
@@ -657,75 +753,17 @@ const day = (t: number) => new Date(t).toLocaleDateString('de-DE', { day: '2-dig
 function renderGmCfg() {
   $('#phead').innerHTML = `<h2>Partien · ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>`;
   $('#pcfg').innerHTML = (gapCfg ? tokenHtml(gapCfg) : '') +
-    `<div class="fld"><span class="lb">Accounts</span><div class="acs"><label class="acq"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>` +
-    `<input id="pacq" type="search" placeholder="Account suchen" maxlength="30" autocomplete="off" spellcheck="false" role="combobox" aria-controls="pacl" aria-expanded="false"></label><div id="pacl" class="acl" role="listbox" hidden></div></div><div id="ppins" class="pins"></div></div>` +
+    `<div class="fld"><span class="lb">Accounts</span>${accBox.html()}</div>` +
     `<div class="sec">Letzte Partien</div><div class="seg" id="pmax">${MAXES.map(n => `<button data-max="${n}"${n === gmMax ? ' class="on"' : ''}>${n}</button>`).join('')}</div>`;
-  acList = []; renderPins();
+  accBox.render();
 }
-// Accounts suchen (wie auf Lichess) und anpinnen
-interface LichessUser { name: string; title?: string }
-let acList: LichessUser[] = [], acIdx = -1, acSeq = 0, acTimer = 0, acEsc = false;
-const pinned = () => gapCfg?.accounts ?? [];
-const isPinned = (n: string) => pinned().some(a => a.toLowerCase() === n.toLowerCase());
-const xIcon = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>';
-function renderPins() {
-  const acc = pinned(), q = $<HTMLInputElement>('#pacq');
-  q.disabled = acc.length >= 10;
-  $('#ppins').innerHTML = acc.map(a => `<span class="pin">${esc(a)}<button type="button" data-unpin="${esc(a)}" title="Entpinnen" aria-label="Entpinnen">${xIcon}</button></span>`).join('');
-}
-function renderAc() {
-  const l = $('#pacl'), open = acList.length > 0;
-  l.hidden = !open; $('#pacq').setAttribute('aria-expanded', String(open));
-  // Fest am Suchfeld ausrichten, damit die Liste über den Dialogrand hinausragen darf statt abgeschnitten zu werden
-  if (open) { const r = $('#pacq').closest('.acq')!.getBoundingClientRect(); Object.assign(l.style, { left: r.left + 'px', top: r.bottom + 4 + 'px', width: r.width + 'px' }); }
-  l.innerHTML = acList.map((u, i) => `<button type="button" role="option" data-pin="${esc(u.name)}"${i === acIdx ? ' class="on" aria-selected="true"' : ''}>${u.title ? `<span class="ttl">${esc(u.title)}</span>` : ''}${esc(u.name)}</button>`).join('');
-  l.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
-}
-const closeAc = () => { clearTimeout(acTimer); acSeq++; acList = []; acIdx = -1; renderAc(); };
-async function searchAc(term: string) {
-  const seq = ++acSeq;
-  try {
-    const r = await api('/api/lichess/users?term=' + encodeURIComponent(term));
-    if (seq !== acSeq) return;   // veraltete Antwort
-    acList = (r.users as LichessUser[]).filter(u => !isPinned(u.name)); acIdx = -1; renderAc();
-  } catch (e) { if (seq === acSeq) toast((e as Error).message); }
-}
-async function savePins(accounts: string[]) {
-  try { gapCfg = await api('/api/gaps-config', { accounts }, 'PUT'); } catch (e) { toast((e as Error).message); }
-  renderPins(); renderGmRes();
-}
-async function pin(name: string) {
-  const q = $<HTMLInputElement>('#pacq');
-  closeAc(); q.value = '';
-  if (!isPinned(name)) await savePins([...pinned(), name]);
-  $<HTMLInputElement>('#pacq').focus();
-}
-pdlg.addEventListener('input', e => {
-  if ((e.target as HTMLElement).id !== 'pacq') return;
-  const v = (e.target as HTMLInputElement).value.trim();
-  closeAc();
-  if (v.length >= 3) acTimer = window.setTimeout(() => searchAc(v), 250);
+const accBox = pinBox(pdlg, {
+  id: 'pac', ph: 'Account suchen', pinned: () => gapCfg?.accounts ?? [],
+  pin: n => saveAccounts([...(gapCfg?.accounts ?? []), n]), unpin: n => saveAccounts((gapCfg?.accounts ?? []).filter(a => a !== n)),
 });
-pdlg.addEventListener('keydown', e => {
-  const q = e.target as HTMLInputElement;
-  if (q.id !== 'pacq') return;
-  const n = acList.length;
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    if (!n) return;
-    e.preventDefault(); acIdx = e.key === 'ArrowDown' ? (acIdx + 1) % n : (acIdx <= 0 ? n : acIdx) - 1; renderAc();
-  } else if (e.key === 'Enter') {
-    e.preventDefault();
-    const v = q.value.trim().toLowerCase(), u = acList[acIdx] ?? acList.find(x => x.name.toLowerCase() === v) ?? acList[0];
-    if (u) pin(u.name);
-  } else if (e.key === 'Escape' && n) {
-    // nur die Liste schließen, nicht den Dialog
-    e.preventDefault(); e.stopPropagation(); acEsc = true; setTimeout(() => { acEsc = false; }); closeAc();
-  }
-});
-pdlg.addEventListener('cancel', e => { if (acEsc) e.preventDefault(); });
-pdlg.addEventListener('focusout', e => { if ((e.target as HTMLElement).id === 'pacq') closeAc(); });
-pdlg.addEventListener('scroll', e => { if (acList.length && e.target !== $('#pacl')) closeAc(); }, true);   // fest positionierte Liste würde sonst verrutschen
-pdlg.addEventListener('mousedown', e => { if ((e.target as HTMLElement).closest('#pacl')) e.preventDefault(); });   // Fokus im Suchfeld lassen
+async function saveAccounts(accounts: string[]) {
+  try { gapCfg = await api('/api/gaps-config', { accounts }, 'PUT'); } finally { renderGmRes(); }
+}
 // Stellungen, die nicht (mehr) im Repertoire sind, werden ausgelassen
 function renderGmRes() {
   const r = checks[rep], b = $<HTMLButtonElement>('#pchk');
@@ -762,9 +800,7 @@ $('#pclose').onclick = () => pdlg.close();
 pdlg.addEventListener('click', async e => {
   const b = (e.target as HTMLElement).closest('button'); const act = b?.dataset.act; const k = b?.dataset.k;
   try {
-    if (b?.dataset.pin) await pin(b.dataset.pin);
-    else if (b?.dataset.unpin) { const n = b.dataset.unpin; await savePins(pinned().filter(a => a !== n)); }
-    else if (await tokenAct(act, b)) { renderGmCfg(); renderGmRes(); }
+    if (await tokenAct(act, b)) { renderGmCfg(); renderGmRes(); }
     else if (b?.dataset.max) { gmMax = Number(b.dataset.max); try { localStorage.setItem('cbgmax', String(gmMax)); } catch { /* ignorieren */ } renderGmCfg(); }
     else if (b?.id === 'pchk') {
       gmBusy = true; gmErr = ''; renderGmRes();
