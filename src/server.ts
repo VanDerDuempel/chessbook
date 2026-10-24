@@ -6,7 +6,7 @@ import { Store, type Rep } from './db';
 import { ExplorerClient, type ExplorerProgress } from './explorer';
 import { scanGaps, type Gap, type OwnGap } from './gaps';
 import { loadConfig, saveConfig, patchConfig } from './config';
-import { fetchGames, checkGames } from './games';
+import { fetchGames, checkGames, searchUsers } from './games';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -90,11 +90,12 @@ const server = http.createServer(async (req, res) => {
     // Schutz vor fremden Webseiten und DNS-Rebinding: nur lokale Host-Header, Schreibzugriffe nur als JSON
     const host = (req.headers.host ?? '').replace(/:\d+$/, '');
     if (host !== 'localhost' && host !== '127.0.0.1') return send(res, 403, { error: 'Nur lokal erreichbar' });
-    const p = new URL(req.url ?? '/', 'http://localhost').pathname;
+    const url = new URL(req.url ?? '/', 'http://localhost'), p = url.pathname;
 
     if (p.startsWith('/api/')) {
       if (req.method === 'GET') {
         if (p === '/api/gaps-config') return send(res, 200, publicConfig());
+        if (p === '/api/lichess/users') return send(res, 200, { users: await searchUsers({ term: url.searchParams.get('term') ?? '', token: config.lichessToken, baseUrl: process.env.CHESSBOOK_LICHESS_URL }) });
         if (p.startsWith('/api/gaps/')) return send(res, 200, jobs[rep(p.slice(10))] ?? { state: 'none', queried: 0, open: 0, message: '', gaps: [], own: [], source: '', player: '', color: '', indexing: null });
         if (p === '/api/export') return send(res, 200, store.exportAll());
         if (p.startsWith('/api/export-pgn/')) {

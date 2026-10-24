@@ -656,11 +656,73 @@ const pdlg = $<HTMLDialogElement>('#pdlg');
 const day = (t: number) => new Date(t).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
 function renderGmCfg() {
   $('#phead').innerHTML = `<h2>Partien · ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>`;
-  const acc = gapCfg?.accounts ?? [], ph = !acc.length && gapCfg?.tokenSet && gmUsers.length ? gmUsers[0] : 'name1, name2';
   $('#pcfg').innerHTML = (gapCfg ? tokenHtml(gapCfg) : '') +
-    `<label class="fld"><span class="lb">Accounts</span><input id="pacc" type="text" value="${esc(acc.join(', '))}" placeholder="${esc(ph)}" autocomplete="off" spellcheck="false"></label>` +
+    `<div class="fld"><span class="lb">Accounts</span><div class="acs"><label class="acq"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>` +
+    `<input id="pacq" type="search" placeholder="Account suchen" maxlength="30" autocomplete="off" spellcheck="false" role="combobox" aria-controls="pacl" aria-expanded="false"></label><div id="pacl" class="acl" role="listbox" hidden></div></div><div id="ppins" class="pins"></div></div>` +
     `<div class="sec">Letzte Partien</div><div class="seg" id="pmax">${MAXES.map(n => `<button data-max="${n}"${n === gmMax ? ' class="on"' : ''}>${n}</button>`).join('')}</div>`;
+  acList = []; renderPins();
 }
+// Accounts suchen (wie auf Lichess) und anpinnen
+interface LichessUser { name: string; title?: string }
+let acList: LichessUser[] = [], acIdx = -1, acSeq = 0, acTimer = 0, acEsc = false;
+const pinned = () => gapCfg?.accounts ?? [];
+const isPinned = (n: string) => pinned().some(a => a.toLowerCase() === n.toLowerCase());
+const xIcon = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>';
+function renderPins() {
+  const acc = pinned(), q = $<HTMLInputElement>('#pacq');
+  q.disabled = acc.length >= 10;
+  $('#ppins').innerHTML = acc.map(a => `<span class="pin">${esc(a)}<button type="button" data-unpin="${esc(a)}" title="Entpinnen" aria-label="Entpinnen">${xIcon}</button></span>`).join('');
+}
+function renderAc() {
+  const l = $('#pacl'), open = acList.length > 0;
+  l.hidden = !open; $('#pacq').setAttribute('aria-expanded', String(open));
+  l.innerHTML = acList.map((u, i) => `<button type="button" role="option" data-pin="${esc(u.name)}"${i === acIdx ? ' class="on" aria-selected="true"' : ''}>${u.title ? `<span class="ttl">${esc(u.title)}</span>` : ''}${esc(u.name)}</button>`).join('');
+  l.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+}
+const closeAc = () => { clearTimeout(acTimer); acSeq++; acList = []; acIdx = -1; renderAc(); };
+async function searchAc(term: string) {
+  const seq = ++acSeq;
+  try {
+    const r = await api('/api/lichess/users?term=' + encodeURIComponent(term));
+    if (seq !== acSeq) return;   // veraltete Antwort
+    acList = (r.users as LichessUser[]).filter(u => !isPinned(u.name)); acIdx = -1; renderAc();
+  } catch (e) { if (seq === acSeq) toast((e as Error).message); }
+}
+async function savePins(accounts: string[]) {
+  try { gapCfg = await api('/api/gaps-config', { accounts }, 'PUT'); } catch (e) { toast((e as Error).message); }
+  renderPins(); renderGmRes();
+}
+async function pin(name: string) {
+  const q = $<HTMLInputElement>('#pacq');
+  closeAc(); q.value = '';
+  if (!isPinned(name)) await savePins([...pinned(), name]);
+  $<HTMLInputElement>('#pacq').focus();
+}
+pdlg.addEventListener('input', e => {
+  if ((e.target as HTMLElement).id !== 'pacq') return;
+  const v = (e.target as HTMLInputElement).value.trim();
+  closeAc();
+  if (v.length >= 3) acTimer = window.setTimeout(() => searchAc(v), 250);
+});
+pdlg.addEventListener('keydown', e => {
+  const q = e.target as HTMLInputElement;
+  if (q.id !== 'pacq') return;
+  const n = acList.length;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!n) return;
+    e.preventDefault(); acIdx = e.key === 'ArrowDown' ? (acIdx + 1) % n : (acIdx <= 0 ? n : acIdx) - 1; renderAc();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const v = q.value.trim().toLowerCase(), u = acList[acIdx] ?? acList.find(x => x.name.toLowerCase() === v) ?? acList[0];
+    if (u) pin(u.name);
+  } else if (e.key === 'Escape' && n) {
+    // nur die Liste schließen, nicht den Dialog
+    e.preventDefault(); e.stopPropagation(); acEsc = true; setTimeout(() => { acEsc = false; }); closeAc();
+  }
+});
+pdlg.addEventListener('cancel', e => { if (acEsc) e.preventDefault(); });
+pdlg.addEventListener('focusout', e => { if ((e.target as HTMLElement).id === 'pacq') closeAc(); });
+pdlg.addEventListener('mousedown', e => { if ((e.target as HTMLElement).closest('#pacl')) e.preventDefault(); });   // Fokus im Suchfeld lassen
 // Stellungen, die nicht (mehr) im Repertoire sind, werden ausgelassen
 function renderGmRes() {
   const r = checks[rep], b = $<HTMLButtonElement>('#pchk');
@@ -694,17 +756,12 @@ $('#gms').onclick = async () => {
   try { gapCfg = await api('/api/gaps-config'); editToken = false; gmErr = ''; renderGmCfg(); renderGmRes(); pdlg.showModal(); } catch (e) { toast((e as Error).message); }
 };
 $('#pclose').onclick = () => pdlg.close();
-pdlg.addEventListener('change', async e => {
-  const t = e.target as HTMLInputElement;
-  if (t.id !== 'pacc') return;
-  try { gapCfg = await api('/api/gaps-config', { accounts: t.value }, 'PUT'); }
-  catch (err) { toast((err as Error).message); }
-  renderGmCfg(); renderGmRes();
-});
 pdlg.addEventListener('click', async e => {
   const b = (e.target as HTMLElement).closest('button'); const act = b?.dataset.act; const k = b?.dataset.k;
   try {
-    if (await tokenAct(act, b)) { renderGmCfg(); renderGmRes(); }
+    if (b?.dataset.pin) await pin(b.dataset.pin);
+    else if (b?.dataset.unpin) { const n = b.dataset.unpin; await savePins(pinned().filter(a => a !== n)); }
+    else if (await tokenAct(act, b)) { renderGmCfg(); renderGmRes(); }
     else if (b?.dataset.max) { gmMax = Number(b.dataset.max); try { localStorage.setItem('cbgmax', String(gmMax)); } catch { /* ignorieren */ } renderGmCfg(); }
     else if (b?.id === 'pchk') {
       gmBusy = true; gmErr = ''; renderGmRes();

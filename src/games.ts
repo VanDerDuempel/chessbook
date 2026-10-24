@@ -103,3 +103,23 @@ export async function fetchGames(o: { token: string; accounts?: string[]; max: n
   }
   return { users, games: [...games.values()] };
 }
+
+export interface LichessUser { name: string; title?: string }
+/** Namenssuche wie im Lichess-Suchfeld, höchstens 10 Treffer. Ungültige Eingaben ergeben ohne Anfrage eine leere Liste. */
+export async function searchUsers(o: { term: string; token?: string; baseUrl?: string; fetchFn?: typeof fetch }): Promise<LichessUser[]> {
+  const term = String(o.term ?? '').trim();
+  if (!/^[A-Za-z0-9_-]{2,30}$/.test(term)) return [];
+  const base = (o.baseUrl ?? 'https://lichess.org').replace(/\/$/, '');
+  const headers: Record<string, string> = { accept: 'application/json', 'user-agent': 'chessbook-lokal' };
+  if (o.token) headers.authorization = `Bearer ${o.token}`;
+  let res: Response;
+  try { res = await (o.fetchFn ?? fetch)(`${base}/api/player/autocomplete?term=${encodeURIComponent(term)}&object=true`, { headers }); }
+  catch { throw new Error('Lichess ist nicht erreichbar. Bitte die Internetverbindung prüfen.'); }
+  if (res.status === 429) throw new Error('Lichess bremst gerade die Anfragen. Bitte später erneut versuchen.');
+  if (!res.ok) throw new Error(`Lichess antwortet mit Status ${res.status}.`);
+  let j: any;
+  try { j = await res.json(); } catch { throw new Error('Lichess liefert eine ungültige Antwort.'); }
+  const list: any[] = Array.isArray(j?.result) ? j.result : [];
+  return list.filter(u => typeof u?.name === 'string').slice(0, 10)
+    .map(u => (typeof u.title === 'string' && u.title ? { name: u.name, title: u.title } : { name: u.name }));
+}

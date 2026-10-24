@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { Store, type Rep } from './db';
 import { START_KEY } from './core';
-import { parseGame, checkGames, fetchGames, type LichessGame } from './games';
+import { parseGame, checkGames, fetchGames, searchUsers, type LichessGame } from './games';
 
 const fresh = () => new Store(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbg-')), 't.db'));
 const play = (s: Store, rep: Rep, ...sans: string[]) => { let k = START_KEY; for (const x of sans) k = s.addSan(rep, k, x).toKey; return k; };
@@ -98,6 +98,29 @@ test('Partien: mehrere Accounts nacheinander, ohne Token, entdoppelt', async () 
   assert.deepEqual(r.games.map(g => g.id), ['a', 'ab', 'c']);
   const withTok = (async (url: string, init: any) => { assert.equal(init.headers.authorization, 'Bearer tok'); assert.ok(!url.endsWith('/api/account')); return new Response(''); }) as typeof fetch;
   assert.deepEqual((await fetchGames({ token: 'tok', accounts: ['Ich'], max: 10, fetchFn: withTok })).users, ['Ich']);
+});
+
+test('Partien: searchUsers fragt die Lichess-Namenssuche ab', async () => {
+  const urls: string[] = []; const auth: unknown[] = [];
+  const fetchFn = (async (url: string, init: any) => {
+    urls.push(url); auth.push(init.headers.authorization);
+    const result = [{ id: 'drnykterstein', name: 'DrNykterstein', title: 'GM', online: true }, { id: 'drx', name: 'DrX' }, { id: 'kaputt' },
+      ...Array.from({ length: 12 }, (_, i) => ({ id: 'dr' + i, name: 'Dr' + i }))];
+    return new Response(JSON.stringify({ result }));
+  }) as typeof fetch;
+  const r = await searchUsers({ term: ' drn ', baseUrl: 'http://x/', fetchFn });
+  assert.equal(urls[0], 'http://x/api/player/autocomplete?term=drn&object=true');
+  assert.deepEqual(r.slice(0, 2), [{ name: 'DrNykterstein', title: 'GM' }, { name: 'DrX' }]);
+  assert.equal(r.length, 10);
+  await searchUsers({ term: 'drn', token: 'tok', fetchFn });
+  assert.deepEqual(auth, [undefined, 'Bearer tok']);
+  for (const term of ['d', 'a b', 'x'.repeat(31), '../x', '']) assert.deepEqual(await searchUsers({ term, fetchFn }), []);
+  assert.equal(urls.length, 2);   // ungültige Eingaben ohne Anfrage
+  const st = (s: number) => (async () => new Response('', { status: s })) as unknown as typeof fetch;
+  await assert.rejects(searchUsers({ term: 'drn', fetchFn: st(500) }), /Status 500/);
+  await assert.rejects(searchUsers({ term: 'drn', fetchFn: st(429) }), /bremst/);
+  const off = (async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch;
+  await assert.rejects(searchUsers({ term: 'drn', fetchFn: off }), /nicht erreichbar/);
 });
 
 test('Partien: unbekannter Account und weder Account noch Token', async () => {
