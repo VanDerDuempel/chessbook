@@ -5,7 +5,7 @@ Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 ## 2026-10-24
 
 ### Neu
-- Zugreihenfolge ändern: Rechtsklick auf einen Knoten bietet „Hauptvariante“, „Nach links“ und „Nach rechts“. Die Reihenfolge bestimmt den Graphen, die Navigation mit ↓/Ende und den PGN-Export.
+- Zugreihenfolge ändern: Rechtsklick auf einen Knoten bietet „Nach links“ und „Nach rechts“, ganz links steht die Hauptvariante. Die Reihenfolge bestimmt den Graphen, die Navigation mit ↓/Ende und den PGN-Export.
 - Training: Das Repertoire wird ab der aktuellen Stellung abgefragt. Der Gegner zieht zufällig aus dem Repertoire, falsche eigene Züge zählen als Fehler und zeigen die Lösung als Pfeil. Zähler für richtige und falsche Züge, Neustart am Ende jeder Variante. Taste T, Escape beendet.
 
 - Training ab markierten Stellungen: Rechtsklick auf einen Knoten bietet „Training ab hier“, bei mehreren markierten Knoten werden alle Varianten ab diesen Stellungen abgefragt. Button und Taste T nehmen ebenfalls die Markierung.

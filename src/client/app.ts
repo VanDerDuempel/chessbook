@@ -295,7 +295,7 @@ G.addEventListener('contextmenu', e => {
   const n = cmKeys.length > 1 ? cmKeys.length + ' ' : '';
   // Reihenfolge unter dem Vorgänger im Graphen (links = Hauptvariante)
   const p = L.parent[k], sib = n || p === undefined ? [] : S.moves[p], i = sib.findIndex(m => m.to === k);
-  const ord = sib.length > 1 ? (i > 0 ? '<button data-act="main">Hauptvariante</button><button data-act="up">Nach links</button>' : '') + (i < sib.length - 1 ? '<button data-act="down">Nach rechts</button>' : '') : '';
+  const ord = sib.length > 1 ? (i > 0 ? '<button data-act="up">Nach links</button>' : '') + (i < sib.length - 1 ? '<button data-act="down">Nach rechts</button>' : '') : '';
   CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button>${ord}<button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
   CM.style.left = e.clientX + 'px'; CM.style.top = e.clientY + 'px'; CM.hidden = false;
 });
