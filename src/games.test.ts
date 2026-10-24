@@ -19,13 +19,13 @@ const repo = () => {
 };
 
 test('Partien: komplett im Repertoire und über das Repertoire-Ende hinaus gelten als sauber', () => {
-  const r = checkGames(repo(), 'white', 'Ich', [game('ich', 'x', 'e4 e5 Nf3'), game('ICH', 'x', 'e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6')]);
+  const r = checkGames(repo(), 'white', ['Ich'], [game('ich', 'x', 'e4 e5 Nf3'), game('ICH', 'x', 'e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6')]);
   assert.deepEqual(r, { games: 2, clean: 2, deviations: [] });
 });
 
 test('Partien: eigene Abweichung und Gegnerabweichung mit Buchzügen', () => {
   const st = repo();
-  const r = checkGames(st, 'white', 'ich', [game('ich', 'Gegner', 'e4 e5 Bc4 Nc6'), game('ich', 'Bot', 'e4 e6 d4 d5')]);
+  const r = checkGames(st, 'white', ['ich'], [game('ich', 'Gegner', 'e4 e5 Bc4 Nc6'), game('ich', 'Bot', 'e4 e6 d4 d5')]);
   assert.equal(r.games, 2); assert.equal(r.clean, 0);
   const [a, b] = r.deviations;   // gleiche Anzahl: neueste Partie zuerst
   assert.deepEqual({ kind: a.kind, san: a.san, uci: a.uci, book: a.book, ply: a.games[0].ply, opp: a.games[0].opponent }, { kind: 'opp', san: 'e6', uci: 'e7e6', book: ['e5', 'c5'], ply: 2, opp: 'Bot' });
@@ -34,7 +34,7 @@ test('Partien: eigene Abweichung und Gegnerabweichung mit Buchzügen', () => {
 });
 
 test('Partien: Gruppierung nach Stellung und Zug, Sortierung nach Anzahl', () => {
-  const r = checkGames(repo(), 'white', 'ich', [
+  const r = checkGames(repo(), 'white', ['ich'], [
     game('ich', 'a', 'e4 d5', 10), game('ich', 'b', 'e4 e6', 11), game('ich', 'c', 'e4 d5 exd5', 12), game('ich', 'd', 'e4 c6', 13),
   ]);
   assert.deepEqual(r.deviations.map(d => [d.san, d.count]), [['d5', 2], ['c6', 1], ['e6', 1]]);
@@ -43,7 +43,7 @@ test('Partien: Gruppierung nach Stellung und Zug, Sortierung nach Anzahl', () =>
 
 test('Partien: Zugumstellung zurück ins Repertoire ist keine Abweichung, spätere Abweichungen zählen', () => {
   const st = repo();
-  const r = checkGames(st, 'white', 'ich', [game('ich', 'x', 'Nf3 Nc6 e4 e5 Bb5'), game('ich', 'y', 'Nf3 Nc6 e4 e5 Bc4')]);
+  const r = checkGames(st, 'white', ['ich'], [game('ich', 'x', 'Nf3 Nc6 e4 e5 Bb5'), game('ich', 'y', 'Nf3 Nc6 e4 e5 Bc4')]);
   assert.equal(r.clean, 1);
   assert.equal(r.deviations.length, 1);
   assert.deepEqual([r.deviations[0].san, r.deviations[0].kind, r.deviations[0].games[0].ply, r.deviations[0].book], ['Bc4', 'own', 5, ['Bb5']]);
@@ -52,10 +52,10 @@ test('Partien: Zugumstellung zurück ins Repertoire ist keine Abweichung, späte
 test('Partien: falsche Farbe, fremde Spieler und illegale Züge', () => {
   const s = fresh(); play(s, 'black', 'e4', 'c5');
   const st = s.state('black');
-  const r = checkGames(st, 'black', 'ich', [game('ich', 'x', 'e4 e5'), game('a', 'b', 'e4 e5'), game('x', 'ich', 'e4 Ke7'), game('x', 'ich', 'e4 e5')]);
+  const r = checkGames(st, 'black', ['ich'], [game('ich', 'x', 'e4 e5'), game('a', 'b', 'e4 e5'), game('x', 'ich', 'e4 Ke7'), game('x', 'ich', 'e4 e5')]);
   assert.equal(r.games, 2); assert.equal(r.clean, 0);
   assert.deepEqual(r.deviations.map(d => [d.san, d.kind]), [['e5', 'own']]);
-  assert.deepEqual(checkGames(s.state('white'), 'white', 'ich', [game('ich', 'x', 'e4 e5')]), { games: 1, clean: 1, deviations: [] });   // leeres Repertoire
+  assert.deepEqual(checkGames(s.state('white'), 'white', ['ich'], [game('ich', 'x', 'e4 e5')]), { games: 1, clean: 1, deviations: [] });   // leeres Repertoire
 });
 
 test('Partien: parseGame liest Namen, KI und Anonym, ignoriert Varianten', () => {
@@ -66,22 +66,51 @@ test('Partien: parseGame liest Namen, KI und Anonym, ignoriert Varianten', () =>
   assert.equal(parseGame({ id: 'd', variant: 'fromPosition', initialFen: '8/8/8/8/8/8/8/8 w - - 0 1', moves: 'e4' }), null);
 });
 
+const line = (id: string, w: string, b: string, date = 1) => JSON.stringify({ id, createdAt: date, moves: 'e4 e5', players: { white: { user: { name: w } }, black: { user: { name: b } } } });
+
 test('Partien: fetchGames holt Konto und NDJSON, meldet abgelehnten Token', async () => {
   const urls: string[] = [];
   const fetchFn = (async (url: string, init: any) => {
     urls.push(url);
     assert.equal(init.headers.authorization, 'Bearer tok');
     if (url.endsWith('/api/account')) return new Response(JSON.stringify({ username: 'Ich' }));
-    return new Response([
-      JSON.stringify({ id: 'a', createdAt: 1, moves: 'e4 e5', players: { white: { user: { name: 'Ich' } }, black: { user: { name: 'Du' } } } }),
-      '', 'kaputt', JSON.stringify({ id: 'b', variant: 'atomic', moves: 'e4' }), '',
-    ].join('\n'));
+    return new Response([line('a', 'Ich', 'Du'), '', 'kaputt', JSON.stringify({ id: 'b', variant: 'atomic', moves: 'e4' }), ''].join('\n'));
   }) as typeof fetch;
   const r = await fetchGames({ token: 'tok', max: 50, baseUrl: 'http://x', fetchFn });
-  assert.equal(r.user, 'Ich');
+  assert.deepEqual(r.users, ['Ich']);
   assert.deepEqual(r.games.map(g => g.id), ['a']);
   assert.ok(urls[1].startsWith('http://x/api/games/user/Ich?max=50&moves=true'));
   const denied = (async () => new Response('', { status: 401 })) as unknown as typeof fetch;
   await assert.rejects(fetchGames({ token: 'tok', max: 50, fetchFn: denied }), /Token abgelehnt/);
-  await assert.rejects(fetchGames({ token: '', max: 50, fetchFn: denied }), /Token/);
+});
+
+test('Partien: mehrere Accounts nacheinander, ohne Token, entdoppelt', async () => {
+  const urls: string[] = [];
+  const fetchFn = (async (url: string, init: any) => {
+    urls.push(url);
+    assert.equal(init.headers.authorization, undefined);
+    return new Response(url.includes('/Erster?') ? [line('a', 'Erster', 'x', 1), line('ab', 'Erster', 'zweiter', 2)].join('\n') : [line('ab', 'Erster', 'zweiter', 2), line('c', 'y', 'Zweiter', 3)].join('\n'));
+  }) as typeof fetch;
+  const r = await fetchGames({ token: '', accounts: ['Erster', 'Zweiter'], max: 30, baseUrl: 'http://x', fetchFn });
+  assert.deepEqual(r.users, ['Erster', 'Zweiter']);
+  assert.deepEqual(urls.map(u => u.split('?')[0]), ['http://x/api/games/user/Erster', 'http://x/api/games/user/Zweiter']);   // kein /api/account
+  assert.ok(urls.every(u => u.includes('max=30&')));   // max pro Account
+  assert.deepEqual(r.games.map(g => g.id), ['a', 'ab', 'c']);
+  const withTok = (async (url: string, init: any) => { assert.equal(init.headers.authorization, 'Bearer tok'); assert.ok(!url.endsWith('/api/account')); return new Response(''); }) as typeof fetch;
+  assert.deepEqual((await fetchGames({ token: 'tok', accounts: ['Ich'], max: 10, fetchFn: withTok })).users, ['Ich']);
+});
+
+test('Partien: unbekannter Account und weder Account noch Token', async () => {
+  const fetchFn = (async (url: string) => new Response('', { status: url.includes('/Weg?') ? 404 : 200 })) as unknown as typeof fetch;
+  await assert.rejects(fetchGames({ token: '', accounts: ['Da', 'Weg'], max: 10, fetchFn }), /Lichess kennt den Account Weg nicht\./);
+  await assert.rejects(fetchGames({ token: '', accounts: [], max: 10, fetchFn }), /Bitte einen Lichess-Account oder Token eintragen\./);
+  await assert.rejects(fetchGames({ token: '', max: 10, fetchFn }), /Account oder Token/);
+});
+
+test('Partien: mehrere eigene Accounts, Groß/Klein egal, Account in der Partie', () => {
+  const r = checkGames(repo(), 'white', ['erster', 'ZWEITER'], [
+    game('Erster', 'x', 'e4 d5', 20), game('Zweiter', 'y', 'e4 d5', 21), game('Fremd', 'Erster', 'e4 d5', 22), game('zweiter', 'z', 'e4 e5 Nf3'),
+  ]);
+  assert.equal(r.games, 3); assert.equal(r.clean, 1);
+  assert.deepEqual(r.deviations[0].games.map(g => [g.account, g.opponent]), [['Zweiter', 'y'], ['Erster', 'x']]);
 });

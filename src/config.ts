@@ -2,21 +2,23 @@ import fs from 'node:fs';
 import type { Source } from './explorer';
 
 export interface Threshold { minShare: number; minGames: number }
-export interface Config { lichessToken: string; source: Source; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds: Record<Source, Threshold>; minReach: number }
+export interface Config { lichessToken: string; source: Source; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds: Record<Source, Threshold>; minReach: number; accounts: string[] }
 const SOURCES = ['masters', 'lichess', 'player'] as const;
 // Ein einzelner Spieler hat viel weniger Partien als die Datenbanken, daher eigene Schwellen pro Quelle
 export const DEFAULTS: Config = {
-  lichessToken: '', source: 'lichess', player: '', playerColor: 'auto', minReach: 0.005,
+  lichessToken: '', source: 'lichess', player: '', playerColor: 'auto', minReach: 0.005, accounts: [],
   thresholds: { masters: { minShare: 0.05, minGames: 30 }, lichess: { minShare: 0.05, minGames: 30 }, player: { minShare: 0.1, minGames: 5 } },
 };
+const NAME = /^[A-Za-z0-9_-]{2,30}$/;   // Lichess-Benutzername
 const copyThresholds = (t: Record<Source, Threshold>) => Object.fromEntries(SOURCES.map(s => [s, { ...t[s] }])) as Record<Source, Threshold>;
 
 export function loadConfig(file: string): Config {
   let saved: any = {};
   try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* keine oder kaputte Datei: Standardwerte */ }
   // Nur bekannte Felder übernehmen, veraltete Einträge fallen beim nächsten Speichern weg
-  const c: Config = { ...DEFAULTS, thresholds: copyThresholds(DEFAULTS.thresholds) };
+  const c: Config = { ...DEFAULTS, thresholds: copyThresholds(DEFAULTS.thresholds), accounts: [] };
   for (const k of ['lichessToken', 'source', 'player', 'playerColor', 'minReach'] as const) if (saved?.[k] !== undefined) (c as any)[k] = saved[k];
+  if (Array.isArray(saved?.accounts)) c.accounts = saved.accounts.filter((a: unknown) => typeof a === 'string' && NAME.test(a));
   if (saved?.thresholds && typeof saved.thresholds === 'object') {
     for (const s of SOURCES) Object.assign(c.thresholds[s], saved.thresholds[s] ?? {});
   } else if (saved?.minShare !== undefined || saved?.minGames !== undefined) {
@@ -42,7 +44,7 @@ const num = (v: unknown, lo: number, hi: number, what: string): number => {
 
 /** Übernimmt geänderte Einstellungen mit Prüfung; unbekannte Felder werden ignoriert. Schwellen als Teil-Update, z. B. {thresholds: {player: {minGames: 8}}}. */
 export function patchConfig(c: Config, p: any): Config {
-  const r = { ...c, thresholds: copyThresholds(c.thresholds) };
+  const r = { ...c, thresholds: copyThresholds(c.thresholds), accounts: [...(c.accounts ?? [])] };
   if (p?.lichessToken !== undefined) {
     const t = String(p.lichessToken).trim();
     if (t && !/^[\w-]{8,200}$/.test(t)) throw new Error('Der Zugangsschlüssel enthält ungültige Zeichen.');
@@ -51,7 +53,7 @@ export function patchConfig(c: Config, p: any): Config {
   if (p?.source !== undefined) r.source = pick(p.source, SOURCES, 'Quelle');
   if (p?.player !== undefined) {
     const n = String(p.player).trim();
-    if (n && !/^[A-Za-z0-9_-]{2,30}$/.test(n)) throw new Error('Ungültiger Spielername (erlaubt sind Buchstaben, Ziffern, _ und -).');
+    if (n && !NAME.test(n)) throw new Error('Ungültiger Spielername (erlaubt sind Buchstaben, Ziffern, _ und -).');
     r.player = n;
   }
   if (p?.playerColor !== undefined) r.playerColor = pick(p.playerColor, ['auto', 'white', 'black'] as const, 'Farbe');
@@ -62,6 +64,18 @@ export function patchConfig(c: Config, p: any): Config {
       if (t?.minShare !== undefined) r.thresholds[s as Source].minShare = num(t.minShare, 0.01, 0.5, 'Mindestanteil');
       if (t?.minGames !== undefined) r.thresholds[s as Source].minGames = num(t.minGames, 1, 1e6, 'Mindestanzahl Partien');
     }
+  }
+  if (p?.accounts !== undefined) {
+    // Liste oder Text mit Komma/Leerzeichen; Duplikate ohne Groß/Klein-Unterschied fallen weg
+    const raw = typeof p.accounts === 'string' ? p.accounts.split(/[\s,;]+/) : Array.isArray(p.accounts) ? p.accounts.filter((x: unknown) => typeof x === 'string') : null;
+    if (!raw) throw new Error('Ungültige Angabe: Accounts');
+    const seen = new Set<string>(), acc: string[] = [];
+    for (const a of raw.map((x: string) => x.trim()).filter(Boolean)) {
+      if (!NAME.test(a)) throw new Error(`Ungültiger Account: ${a.slice(0, 40)}`);
+      if (!seen.has(a.toLowerCase())) { seen.add(a.toLowerCase()); acc.push(a); }
+    }
+    if (acc.length > 10) throw new Error('Höchstens 10 Accounts.');
+    r.accounts = acc;
   }
   if (p?.minReach !== undefined) r.minReach = num(p.minReach, 0.0005, 0.5, 'Erreichbarkeit');
   return r;

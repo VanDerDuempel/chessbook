@@ -3,7 +3,7 @@ import { startPos, START_KEY, playSan } from './core';
 import type { State, Rep } from './db';
 
 export interface LichessGame { id: string; white: string; black: string; moves: string[]; date: number }
-export interface GameRef { id: string; color: 'white' | 'black'; ply: number; date: number; opponent: string }
+export interface GameRef { id: string; color: 'white' | 'black'; ply: number; date: number; opponent: string; account: string }
 export interface Deviation { kind: 'own' | 'opp'; key: string; san: string; uci: string; book: string[]; count: number; games: GameRef[] }
 export interface CheckResult { games: number; clean: number; deviations: Deviation[] }
 
@@ -21,12 +21,12 @@ export function parseGame(j: any): LichessGame | null {
 }
 
 /** Gleicht Partien mit dem Repertoire ab. Rein, ohne I/O. */
-export function checkGames(st: State, rep: Rep, user: string, games: LichessGame[]): CheckResult {
-  const u = user.toLowerCase();
+export function checkGames(st: State, rep: Rep, users: string[], games: LichessGame[]): CheckResult {
+  const u = new Set(users.map(x => x.toLowerCase()));
   const groups = new Map<string, Deviation>();
   let count = 0, clean = 0;
   for (const g of games) {
-    if (g[rep].toLowerCase() !== u) continue;
+    if (!u.has(g[rep].toLowerCase())) continue;
     count++;
     const r = walk(st, g.moves);
     if (r === 'clean') { clean++; continue; }
@@ -39,7 +39,7 @@ export function checkGames(st: State, rep: Rep, user: string, games: LichessGame
       groups.set(id, d);
     }
     d.count++;
-    d.games.push({ id: g.id, color: rep, ply: i + 1, date: g.date, opponent: rep === 'white' ? g.black : g.white });
+    d.games.push({ id: g.id, color: rep, ply: i + 1, date: g.date, opponent: rep === 'white' ? g.black : g.white, account: g[rep] });
   }
   const devs = [...groups.values()];
   for (const d of devs) d.games.sort((a, b) => b.date - a.date);
@@ -65,33 +65,41 @@ function walk(st: State, moves: string[]): Walk {
   return 'clean';
 }
 
-/** Lädt die eigenen Partien von Lichess (Nutzer aus dem Token). */
-export async function fetchGames(o: { token: string; max: number; baseUrl?: string; fetchFn?: typeof fetch }): Promise<{ user: string; games: LichessGame[] }> {
-  if (!o.token) throw new Error('Kein Lichess-Token eingetragen.');
+/** Lädt die eigenen Partien von Lichess: aus `accounts` (je `max`) oder, wenn leer, vom Account hinter dem Token. */
+export async function fetchGames(o: { token: string; accounts?: string[]; max: number; baseUrl?: string; fetchFn?: typeof fetch }): Promise<{ users: string[]; games: LichessGame[] }> {
+  if (!o.token && !o.accounts?.length) throw new Error('Bitte einen Lichess-Account oder Token eintragen.');
   const base = (o.baseUrl ?? 'https://lichess.org').replace(/\/$/, '');
   const f = o.fetchFn ?? fetch;
-  const get = async (url: string, accept: string) => {
+  const get = async (url: string, accept: string, who?: string) => {
+    const headers: Record<string, string> = { accept, 'user-agent': 'chessbook-lokal' };
+    if (o.token) headers.authorization = `Bearer ${o.token}`;   // öffentliche Partien brauchen keinen Token
     let res: Response;
-    try { res = await f(url, { headers: { authorization: `Bearer ${o.token}`, accept, 'user-agent': 'chessbook-lokal' } }); }
+    try { res = await f(url, { headers }); }
     catch { throw new Error('Lichess ist nicht erreichbar. Bitte die Internetverbindung prüfen.'); }
     if (res.status === 401 || res.status === 403) throw new Error('Lichess hat den Token abgelehnt.');
+    if (res.status === 404 && who) throw new Error(`Lichess kennt den Account ${who} nicht.`);
     if (res.status === 429) throw new Error('Lichess bremst gerade die Anfragen. Bitte später erneut versuchen.');
     if (!res.ok) throw new Error(`Lichess antwortet mit Status ${res.status}.`);
     try { return await res.text(); } catch { throw new Error('Verbindung zu Lichess abgebrochen.'); }
   };
-  const acc = await get(`${base}/api/account`, 'application/json');
-  let user = '';
-  try { user = String(JSON.parse(acc).username ?? ''); } catch { /* unten gemeldet */ }
-  if (!user) throw new Error('Lichess liefert keinen Benutzernamen.');
-  const q = `max=${o.max}&moves=true&tags=false&clocks=false&evals=false&opening=false&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence`;
-  const text = await get(`${base}/api/games/user/${encodeURIComponent(user)}?${q}`, 'application/x-ndjson');
-  const games: LichessGame[] = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    let j: any;
-    try { j = JSON.parse(line); } catch { continue; }
-    const g = parseGame(j);
-    if (g) games.push(g);
+  let users = o.accounts?.length ? [...o.accounts] : [];
+  if (!users.length) {
+    let user = '';
+    try { user = String(JSON.parse(await get(`${base}/api/account`, 'application/json')).username ?? ''); } catch (e) { if (!(e instanceof SyntaxError)) throw e; }
+    if (!user) throw new Error('Lichess liefert keinen Benutzernamen.');
+    users = [user];
   }
-  return { user, games };
+  const q = `max=${o.max}&moves=true&tags=false&clocks=false&evals=false&opening=false&perfType=ultraBullet,bullet,blitz,rapid,classical,correspondence`;
+  const games = new Map<string, LichessGame>();
+  for (const u of users) {
+    const text = await get(`${base}/api/games/user/${encodeURIComponent(u)}?${q}`, 'application/x-ndjson', u);
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      let j: any;
+      try { j = JSON.parse(line); } catch { continue; }
+      const g = parseGame(j);
+      if (g && !games.has(g.id)) games.set(g.id, g);   // Partien zwischen eigenen Accounts kommen doppelt
+    }
+  }
+  return { users, games: [...games.values()] };
 }
