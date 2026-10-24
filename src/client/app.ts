@@ -6,7 +6,7 @@ import { chessgroundDests } from 'chessops/compat';
 import { parseSquare } from 'chessops/util';
 import { fromFen, playUci, START_KEY } from '../core';
 import { layout, renderGraph, miniBoard, sanHtml, keysInRect, NODE_W, NODE_H, type Layout } from './graph';
-import { openMoves, markDone } from './train';
+import { openMoves, markDone, weakKeys, isWeak, type TrainStat } from './train';
 import { findPosition } from './search';
 import type { State, Shape, Rep } from '../db';
 
@@ -21,9 +21,11 @@ let pending: { keys: string[]; n: number } | null = null;
 let marked = new Set<string>();
 let promo: { from: string; to: string; color: string } | null = null;
 let settingShapes = false;
+// Trainingsstatistik pro eigener Stellung (erster Versuch richtig/falsch, Serie)
+let stats: Record<string, TrainStat> = {};
 // Training: Startstellungen, aktuelle Ausgangsstellung, Zähler, Fehler in dieser Stellung, Lösung zeigen, besuchte Stellungen (in Zugreihenfolge) und gespielte Züge der Variante,
 // Variante bisher fehlerfrei, erledigte Stellungen dieser Runde, im Graphen aufgedeckte und rot markierte Stellungen, Rundenende, Timer
-let tr: { starts: string[]; start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; shown: Set<string>; red: Set<string>; round: boolean; t: number } | null = null;
+let tr: { weak: boolean; starts: string[]; start: string; ok: number; bad: number; miss: boolean; hint: boolean; seen: Set<string>; line: [string, string][]; clean: boolean; done: Set<string>; shown: Set<string>; red: Set<string>; round: boolean; t: number } | null = null;
 const flips: Record<Rep, boolean> = { white: false, black: false };
 try { Object.assign(flips, JSON.parse(localStorage.getItem('cbflip') ?? '{}')); } catch { /* ignorieren */ }
 const orientation = (): Rep => (flips[rep] ? (rep === 'white' ? 'black' : 'white') : rep);
@@ -39,7 +41,7 @@ function toast(msg: string) {
   setTimeout(() => { t.hidden = true; }, 3500);
 }
 async function load() {
-  S = await api('/api/state/' + rep);
+  [S, stats] = await Promise.all([api('/api/state/' + rep), api('/api/train-stats/' + rep)]);
   if (!S.positions[cur]) cur = S.root;
   stack = stack.filter(k => S.positions[k]); fwd = fwd.filter(k => S.positions[k]);
   marked = new Set([...marked].filter(k => S.positions[k]));
@@ -184,7 +186,7 @@ const G = $('#graph');
 function drawGraph() {
   hidePv();
   const rv = tr && { shown: tr.shown, ok: tr.done, bad: new Set([...tr.red].filter(k => !tr!.done.has(k))) };
-  G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys, marked, rv || undefined);
+  G.innerHTML = renderGraph(L, S, cur, zoom, gapKeys, marked, rv || undefined, tr ? undefined : weakSet());
   focusCur();
 }
 // Aktuelle Stellung mittig zeigen; in der Startstellung den ersten Zug der Hauptvariante oben
@@ -275,7 +277,7 @@ function hidePv() { PV.hidden = true; pvKey = null; }
 G.addEventListener('mousemove', e => {
   const k = pan || lasso || tr ? null : attr(e.target as Element, 'data-k');
   if (!k || !S.positions[k]) { hidePv(); return; }
-  if (pvKey !== k) { pvKey = k; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}</div>`; }
+  if (pvKey !== k) { pvKey = k; const st = stats[k]; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}${st ? ` <b class="ok">✓ ${st.ok}</b> <b class="bad">✗ ${st.bad}</b>` : ''}</div>`; }
   let x = e.clientX + 18, y = e.clientY + 18;
   if (x + 212 > innerWidth) x = e.clientX - 222;
   if (y + 236 > innerHeight) y = e.clientY - 246;
@@ -296,7 +298,8 @@ G.addEventListener('contextmenu', e => {
   // Reihenfolge unter dem Vorgänger im Graphen (links = Hauptvariante)
   const p = L.parent[k], sib = n || p === undefined ? [] : S.moves[p], i = sib.findIndex(m => m.to === k);
   const ord = sib.length > 1 ? (i > 0 ? '<button data-act="up">Nach links</button>' : '') + (i < sib.length - 1 ? '<button data-act="down">Nach rechts</button>' : '') : '';
-  CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button>${ord}<button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
+  const rst = cmKeys.some(x => stats[x]) ? '<button data-act="rst">Statistik zurücksetzen</button>' : '';
+  CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button>${ord}${rst}<button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
   CM.style.left = e.clientX + 'px'; CM.style.top = e.clientY + 'px'; CM.hidden = false;
 });
 CM.onclick = e => {
@@ -304,6 +307,7 @@ CM.onclick = e => {
   CM.hidden = true;
   if (act === 'del') void askDelete(cmKeys);
   else if (act === 'train') startTrain(cmKeys);
+  else if (act === 'rst') void resetStats(cmKeys);
   else void reorder(cmKeys[0], act as 'main' | 'up' | 'down');
 };
 async function reorder(k: string, dir: 'main' | 'up' | 'down') {
@@ -320,7 +324,9 @@ function refresh() {
   const atRoot = cur === S.root || !!tr, nx = !!nextOf(cur) && !tr;
   ($('#n0') as HTMLButtonElement).disabled = ($('#n1') as HTMLButtonElement).disabled = atRoot;
   ($('#n2') as HTMLButtonElement).disabled = ($('#n3') as HTMLButtonElement).disabled = !nx;
-  $('#trn').classList.toggle('on', !!tr);
+  $('#trn').classList.toggle('on', !!tr && !tr.weak);
+  const nw = weakKeys(S, stats).length, wb = $('#weak');
+  wb.classList.toggle('on', !!tr?.weak); wb.hidden = !nw && !tr?.weak; $('#weakn').textContent = nw ? String(nw) : '';
 }
 async function switchRep(r: Rep) { if (r === rep) { navStart(); return; } rep = r; cur = START_KEY; stack = []; fwd = []; pending = null; marked.clear(); await load(); await loadGapJob().catch(() => {}); refresh(); }
 function flipBoard() { flips[rep] = !flips[rep]; try { localStorage.setItem('cbflip', JSON.stringify(flips)); } catch { /* ignorieren */ } refresh(); }
@@ -331,8 +337,8 @@ $('#fl').onclick = flipBoard;
 addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName) || ($('#dlg') as HTMLDialogElement).open) return;
   const f: Record<string, () => void> = tr
-    ? { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, Escape: stopTrain }
-    : { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, '/': () => Q.focus(), ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
+    ? { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, w: toggleWeak, W: toggleWeak, Escape: stopTrain }
+    : { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, w: toggleWeak, W: toggleWeak, '/': () => Q.focus(), ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
   if (f[e.key]) { e.preventDefault(); f[e.key](); } else if (e.key === 'Escape') { CM.hidden = true; clearMarks(); }
 });
 addEventListener('resize', () => cg.redrawAll());
@@ -393,17 +399,24 @@ split.addEventListener('dblclick', () => { setBw(null); try { localStorage.remov
 // ---------- Training (Repertoire abfragen)
 // Der Gegner spielt zufällig einen seiner Repertoirezüge, man selbst muss einen eigenen finden.
 // Am Ende einer Variante geht es zurück zur Ausgangsstellung. Fehlerfrei gespielte Varianten kommen in dieser Runde nicht wieder,
-// sind alle geschafft, beginnt eine neue Runde. Nichts wird gespeichert.
+// sind alle geschafft, beginnt eine neue Runde. Gespeichert wird pro eigener Stellung nur der erste Versuch (richtig/falsch).
+// Schwachstellen-Training (W) startet ab den Stellungen mit offenen Fehlern, mit Markierung nur ab denen darin bzw. danach.
 // Der Graph deckt sich dabei auf: gespielte Stellungen erscheinen, nach einem Fehler nur bis zur Fehlerstelle (rot),
 // fehlerfrei geschaffte werden grün. Mit einer neuen Runde ist er wieder verdeckt (bis auf die Startstellungen).
 // Mit markierten Knoten (oder per Rechtsklick) geht es ab diesen Stellungen, sonst ab der aktuellen.
 function toggleTrain() { if (tr) stopTrain(); else startTrain(marked.size ? [...marked] : undefined); }
-function startTrain(from?: string[]) {
+function toggleWeak() {
+  if (tr) { stopTrain(); return; }
+  const ks = weakKeys(S, stats, marked.size ? [...marked] : undefined);
+  if (!ks.length) { toast('Keine Schwachstellen'); return; }
+  startTrain(ks, true);
+}
+function startTrain(from?: string[], weak = false) {
   const starts = (from ?? [S.moves[cur]?.length ? cur : S.root]).filter(k => S.moves[k]?.length);
   if (!starts.length) { toast(from ? 'Ab hier keine Züge' : 'Noch keine Züge im Repertoire'); return; }
   CM.hidden = true; pending = null; promo = null;
   const start = starts.includes(cur) ? cur : starts[Math.floor(Math.random() * starts.length)];
-  tr = { starts, start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), shown: new Set(), red: new Set(), round: false, t: 0 };
+  tr = { weak, starts, start, ok: 0, bad: 0, miss: false, hint: false, seen: new Set([start]), line: pathTo(start), clean: true, done: new Set(), shown: new Set(), red: new Set(), round: false, t: 0 };
   tr.shown = baseShown(tr.starts);
   document.body.classList.add('train');
   if (start !== cur) { stack.push(cur); fwd = []; cur = start; }
@@ -443,8 +456,8 @@ function trRestart() {
 function trMove(uci: string) {
   const t = tr!, p = playUci(fromFen(S.positions[cur].fen), uci);
   const m = p && S.moves[cur]?.find(x => x.uci === p.uci);
-  if (m) { if (!t.miss) t.ok++; flash('ok'); trGo(m.to, m.san); return; }
-  if (!t.miss) { t.bad++; t.miss = true; if (t.clean) t.red.add(cur); t.clean = false; }
+  if (m) { if (!t.miss) { t.ok++; void record(cur, true); } flash('ok'); trGo(m.to, m.san); return; }
+  if (!t.miss) { t.bad++; void record(cur, false); t.miss = true; if (t.clean) t.red.add(cur); t.clean = false; }
   t.hint = true; flash('bad'); refresh();
 }
 // Startstellungen samt Weg dorthin sind immer sichtbar
@@ -453,6 +466,14 @@ function flash(c: 'ok' | 'bad' | 'done') {
   const el = $('#bw'); el.classList.remove('ok', 'bad', 'done'); void el.offsetWidth; el.classList.add(c);
 }
 $('#trn').onclick = toggleTrain;
+$('#weak').onclick = toggleWeak;
+const weakSet = () => new Set(Object.keys(stats).filter(k => isWeak(stats[k])));
+async function record(key: string, ok: boolean) {
+  try { stats[key] = await api('/api/train-result', { rep, key, ok }); } catch (e) { toast((e as Error).message); }
+}
+async function resetStats(keys: string[]) {
+  try { await api('/api/train-reset', { rep, keys }); keys.forEach(k => delete stats[k]); refresh(); } catch (e) { toast((e as Error).message); }
+}
 
 // ---------- Daten (Export und Import)
 const dlg = $<HTMLDialogElement>('#dlg'), txt = $<HTMLTextAreaElement>('#txt');

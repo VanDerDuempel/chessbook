@@ -5,6 +5,7 @@ Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 ## 2026-10-24
 
 ### Neu
+- Schwachstellen im Training: Pro eigener Stellung wird gespeichert, ob der erste Versuch richtig oder falsch war. Stellungen mit Fehlern gelten als schwach, bis sie zweimal hintereinander richtig gespielt wurden. Sie tragen im Graphen einen roten Punkt, die Vorschau zeigt richtige und falsche Versuche. Der neue Button mit der Anzahl (Taste W) trainiert nur ab den Schwachstellen, mit Markierung nur ab denen darin und danach. Rechtsklick → „Statistik zurücksetzen“.
 - Zugreihenfolge ändern: Rechtsklick auf einen Knoten bietet „Nach links“ und „Nach rechts“, ganz links steht die Hauptvariante. Die Reihenfolge bestimmt den Graphen, die Navigation mit ↓/Ende und den PGN-Export.
 - Training: Das Repertoire wird ab der aktuellen Stellung abgefragt. Der Gegner zieht zufällig aus dem Repertoire, falsche eigene Züge zählen als Fehler und zeigen die Lösung als Pfeil. Zähler für richtige und falsche Züge, Neustart am Ende jeder Variante. Taste T, Escape beendet.
 

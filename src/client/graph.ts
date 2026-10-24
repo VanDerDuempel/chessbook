@@ -68,7 +68,6 @@ export function sanHtml(side: 'w' | 'b', san: string): string {
 export interface Reveal { shown: Set<string>; ok: Set<string>; bad: Set<string> }
 
 /** `weak`: Schwachstellen bekommen Klasse und Punkt unten rechts, nicht im Training mit `rv`. */
-
 export function renderGraph(L: Layout, st: State, cur: string, zoom: number, gaps?: Set<string>, marked?: Set<string>, rv?: Reveal, weak?: Set<string>): string {
   if (!Object.keys(L.pos).length) return '<div class="empty">Noch keine Züge</div>';
   const pathEdges = new Set<string>(), pathNodes = new Set<string>();

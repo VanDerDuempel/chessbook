@@ -1,4 +1,5 @@
-import type { State, Rep, MoveRow } from '../db';
+import type { State, Rep, MoveRow, TrainStat } from '../db';
+export type { TrainStat };
 
 // Training: welche Varianten in der laufenden Runde noch offen sind
 
@@ -27,9 +28,6 @@ export function markDone(S: State, rep: Rep, keys: string[], done: Set<string>) 
 }
 
 // Schwachstellen: eigene Stellungen, in denen beim ersten Versuch falsch gezogen wurde
-
-/** Statistik je Stellung (eigener Zug, erster Versuch): richtig → ok+1, streak+1; falsch → bad+1, streak=0. */
-export interface TrainStat { ok: number; bad: number; streak: number; last: number }
 
 /** So oft muss eine Stellung nach einem Fehler in Folge richtig gespielt werden, bis sie nicht mehr als schwach gilt. */
 export const WEAK_STREAK = 2;
