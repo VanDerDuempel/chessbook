@@ -25,6 +25,7 @@
       <a id="lic" class="btn" target="_blank" rel="noopener" title="Stellung auf Lichess analysieren"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Analysieren</a>
       <button id="dat" title="Export und Import"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7" ry="2.5"/><path d="M5 5.5v13c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-13M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>Daten</button>
       <button id="gap" title="Lücken im Repertoire finden"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>Lücken</button>
+      <button id="gms" title="Repertoire mit deinen Lichess-Partien abgleichen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16M12 4v16"/></svg>Partien</button>
       <button id="trn" title="Repertoire abfragen (T)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg>Training</button>
       <button id="weak" title="Schwachstellen trainieren (W)" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5"/><circle cx="12" cy="16" r="0.8" fill="currentColor"/></svg><span id="weakn"></span></button>
       <button id="fl" title="Brett umdrehen (F)" aria-label="Brett umdrehen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg></button>
@@ -59,6 +60,11 @@
   <div class="dh"><div id="ghead"></div><button id="gclose" class="x" title="Schließen" aria-label="Schließen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="db"><div id="gcfg"></div><div id="gres"></div></div>
   <div class="df"><button id="gscan" class="primary">Suchen</button></div>
+</dialog>
+<dialog id="pdlg" class="dlg" autofocus>
+  <div class="dh"><div id="phead"></div><button id="pclose" class="x" title="Schließen" aria-label="Schließen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="db"><div id="pcfg"></div><div id="pres"></div></div>
+  <div class="df"><button id="pchk" class="primary">Abgleichen</button></div>
 </dialog>
 <div id="toast" hidden></div>
 <script type="module" src="app.js"></script>

@@ -335,7 +335,7 @@ $('#tw').onclick = () => void switchRep('white'); $('#tb').onclick = () => void 
 $('#n0').onclick = navStart; $('#n1').onclick = navBack; $('#n2').onclick = navFwd; $('#n3').onclick = navEnd;
 $('#fl').onclick = flipBoard;
 addEventListener('keydown', e => {
-  if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName) || ($('#dlg') as HTMLDialogElement).open) return;
+  if (e.ctrlKey || e.altKey || e.metaKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName) || document.querySelector('dialog[open]')) return;
   const f: Record<string, () => void> = tr
     ? { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, w: toggleWeak, W: toggleWeak, Escape: stopTrain }
     : { f: flipBoard, F: flipBoard, t: toggleTrain, T: toggleTrain, w: toggleWeak, W: toggleWeak, '/': () => Q.focus(), ArrowLeft: navBack, ArrowRight: navFwd, ArrowUp: navStart, Home: navStart, ArrowDown: navEnd, End: navEnd };
@@ -549,6 +549,17 @@ const SOURCES: [string, string, string][] = [
   ['lichess', 'Lichess', 'Alle Partien auf Lichess'],
   ['player', 'Spieler', 'Partien eines Lichess-Spielers'],
 ];
+// Token-Feld, geteilt von Lücken und Partien; das Eingabefeld wird relativ zum Button gesucht, weil beide Dialoge im DOM sind
+const tokenHtml = (c: GapCfg) => c.tokenSet && !editToken
+  ? `<div class="stat"><i></i>Lichess verbunden<button class="link" data-act="chtok">Ändern</button></div>`
+  : `<label class="fld"><span class="lb">Lichess-Token</span><span class="inl"><input class="tok" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
+     <p class="hint"><a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">Token erstellen ↗</a></p>`;
+async function tokenAct(act: string | undefined, b: HTMLElement | null) {
+  if (act === 'chtok') editToken = true;
+  else if (act === 'savetok') { gapCfg = await api('/api/gaps-config', { lichessToken: b?.closest('.fld')?.querySelector<HTMLInputElement>('input.tok')?.value ?? '' }, 'PUT'); editToken = false; }
+  else return false;
+  return true;
+}
 function renderGapCfg() {
   const c = gapCfg; if (!c) return;
   const seg = SOURCES.map(([v, n, d]) => `<button data-src="${v}" title="${d}"${v === c.source ? ' class="on"' : ''}>${n}</button>`).join('');
@@ -556,11 +567,7 @@ function renderGapCfg() {
   const opp = rep === 'white' ? 'Schwarz' : 'Weiß';
   const sel = (v: string, n: string) => `<option value="${v}"${v === c.playerColor ? ' selected' : ''}>${n}</option>`;
   $('#ghead').innerHTML = `<h2>Lücken · ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>`;
-  $('#gcfg').innerHTML =
-    (c.tokenSet && !editToken
-      ? `<div class="stat"><i></i>Lichess verbunden<button class="link" data-act="chtok">Ändern</button></div>`
-      : `<label class="fld"><span class="lb">Lichess-Token</span><span class="inl"><input id="gtoken" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
-         <p class="hint"><a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">Token erstellen ↗</a></p>`) +
+  $('#gcfg').innerHTML = tokenHtml(c) +
     `<div class="sec">Quelle</div><div class="seg" id="gsrc">${seg}</div>` +
     (c.source === 'player'
       ? `<div class="grid2"><label class="fld"><span class="lb">Spieler</span><input id="gplayer" type="text" value="${esc(c.player)}" placeholder="Lichess-Name" maxlength="30" autocomplete="off"></label>
@@ -616,8 +623,7 @@ $('#gclose').onclick = () => gdlg.close();
 gdlg.addEventListener('click', async e => {
   const b = (e.target as HTMLElement).closest('button'); const act = b?.dataset.act; const k = b?.dataset.k;
   try {
-    if (act === 'chtok') { editToken = true; renderGapCfg(); renderGapRes(); }
-    else if (act === 'savetok') { gapCfg = await api('/api/gaps-config', { lichessToken: ($('#gtoken') as HTMLInputElement).value }, 'PUT'); editToken = false; renderGapCfg(); renderGapRes(); }
+    if (await tokenAct(act, b)) { renderGapCfg(); renderGapRes(); }
     else if (b?.dataset.src) { gapCfg = await api('/api/gaps-config', { source: b.dataset.src }, 'PUT'); renderGapCfg(); renderGapRes(); }
     else if (b?.id === 'gscan') { gapJobs[rep] = await api('/api/gaps/scan', { rep }); updateGapKeys(); renderGapRes(); pollGaps(); }
     else if (act === 'go' && k) { gdlg.close(); go(k); }
@@ -636,6 +642,73 @@ gdlg.addEventListener('change', async e => {
     else if (t.id === 'gplayer') gapCfg = await api('/api/gaps-config', { player: t.value.trim() }, 'PUT');
     else if (t.id === 'gcolor') gapCfg = await api('/api/gaps-config', { playerColor: t.value }, 'PUT');
   } catch (err) { toast((err as Error).message); renderGapCfg(); }
+});
+
+// ---------- Partien (Abgleich mit den eigenen Lichess-Partien)
+interface GameRef { id: string; color: Rep; ply: number; date: number; opponent: string }
+interface Deviation { kind: 'own' | 'opp'; key: string; san: string; uci: string; book: string[]; count: number; games: GameRef[] }
+interface CheckResult { games: number; clean: number; deviations: Deviation[] }
+const checks: Record<Rep, CheckResult | null> = { white: null, black: null };
+const MAXES = [50, 100, 300];
+let gmMax = 100, gmBusy = false, gmErr = '';
+try { const m = Number(localStorage.getItem('cbgmax')); if (MAXES.includes(m)) gmMax = m; } catch { /* ignorieren */ }
+const pdlg = $<HTMLDialogElement>('#pdlg');
+const day = (t: number) => new Date(t).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+function renderGmCfg() {
+  $('#phead').innerHTML = `<h2>Partien · ${rep === 'white' ? 'Weiß' : 'Schwarz'}</h2>`;
+  $('#pcfg').innerHTML = (gapCfg ? tokenHtml(gapCfg) : '') +
+    `<div class="sec">Letzte Partien</div><div class="seg" id="pmax">${MAXES.map(n => `<button data-max="${n}"${n === gmMax ? ' class="on"' : ''}>${n}</button>`).join('')}</div>`;
+}
+// Stellungen, die nicht (mehr) im Repertoire sind, werden ausgelassen
+function renderGmRes() {
+  const r = checks[rep], b = $<HTMLButtonElement>('#pchk');
+  b.disabled = !gapCfg?.tokenSet || gmBusy; b.classList.toggle('busy', gmBusy);
+  b.innerHTML = gmBusy ? '<span class="spin s"></span>Abgleich läuft …' : checks.white || checks.black ? 'Erneut abgleichen' : 'Abgleichen';
+  let h = gmErr ? `<div class="sec"></div><div class="note err">${esc(gmErr)}</div>` : '';
+  if (r) {
+    const sum = (k: Deviation['kind']) => r.deviations.reduce((a, d) => a + (d.kind === k ? d.count : 0), 0);
+    h += `<div class="sec"></div><div class="kpis k4">${kpi(r.games, 'Partien')}${kpi(r.clean, 'ohne Abweichung')}${kpi(sum('own'), 'du weichst ab')}${kpi(sum('opp'), 'Gegner weicht ab')}</div>`;
+    for (const [kind, title] of [['own', 'Deine Abweichungen'], ['opp', 'Gegnerzüge']] as const) {
+      const ds = r.deviations.filter(d => d.kind === kind && S.positions[d.key]);
+      if (!ds.length) continue;
+      h += `<div class="sec">${title}${ds.length > 100 ? ' <span>Top 100</span>' : ''}</div><div class="list">`;
+      for (const d of ds.slice(0, 100)) {
+        const ply = pathTo(d.key).length + 1, side = ply % 2 ? 'w' : 'b', g = d.games[0];
+        const num = `${Math.ceil(ply / 2)}${side === 'w' ? '.' : '...'}`;
+        const opps = [...new Set(d.games.map(x => x.opponent))].join(', ');
+        const book = kind === 'own' && d.book.length ? `<span class="bk">statt ${d.book.map(s => sanHtml(side, s)).join(', ')}</span>` : '';
+        const link = g ? `<a class="btn sm" href="https://lichess.org/${encodeURIComponent(g.id)}/${g.color === 'black' ? 'black' : 'white'}#${Number(g.ply) || 0}" target="_blank" rel="noopener" title="${esc(g.opponent)}">↗</a>` : '';
+        h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(d.key))}</div><div class="gm"><span class="mv">${num}${sanHtml(side, d.san)}</span>${book}
+          <span class="gs" title="${esc(opps)}">${de(d.count)}×${g ? ' · ' + day(g.date) : ''}</span></div></div>
+          <div class="ga"><button class="sm" data-act="go" data-k="${esc(d.key)}">Hingehen</button>${kind === 'opp' ? `<button class="sm soft" data-act="add" data-k="${esc(d.key)}" data-san="${esc(d.san)}">Eintragen</button>` : ''}${link}</div></div>`;
+      }
+      h += '</div>';
+    }
+  }
+  $('#pres').innerHTML = h;
+}
+$('#gms').onclick = async () => {
+  try { gapCfg = await api('/api/gaps-config'); editToken = false; gmErr = ''; renderGmCfg(); renderGmRes(); pdlg.showModal(); } catch (e) { toast((e as Error).message); }
+};
+$('#pclose').onclick = () => pdlg.close();
+pdlg.addEventListener('click', async e => {
+  const b = (e.target as HTMLElement).closest('button'); const act = b?.dataset.act; const k = b?.dataset.k;
+  try {
+    if (await tokenAct(act, b)) { renderGmCfg(); renderGmRes(); }
+    else if (b?.dataset.max) { gmMax = Number(b.dataset.max); try { localStorage.setItem('cbgmax', String(gmMax)); } catch { /* ignorieren */ } renderGmCfg(); }
+    else if (b?.id === 'pchk') {
+      gmBusy = true; gmErr = ''; renderGmRes();
+      try { const r = await api('/api/games/check', { max: gmMax }); checks.white = r.white; checks.black = r.black; } catch (err) { gmErr = (err as Error).message; } finally { gmBusy = false; }
+      renderGmRes();
+    }
+    else if (act === 'go' && k) { pdlg.close(); go(k); }
+    else if (act === 'add' && k && b?.dataset.san) {
+      const san = b.dataset.san;
+      await api('/api/move-san', { rep, from: k, san });
+      const r = checks[rep]; if (r) r.deviations = r.deviations.filter(d => !(d.kind === 'opp' && d.key === k && d.san === san));
+      await load(); renderGmRes(); refresh();
+    }
+  } catch (err) { toast((err as Error).message); }
 });
 
 // ---------- Hell/Dunkel
