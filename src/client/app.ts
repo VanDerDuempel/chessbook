@@ -293,14 +293,22 @@ G.addEventListener('contextmenu', e => {
   if (!k || tr) { CM.hidden = true; return; }
   cmKeys = marked.has(k) ? [...marked] : [k];
   const n = cmKeys.length > 1 ? cmKeys.length + ' ' : '';
-  CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button><button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
+  // Reihenfolge unter dem Vorgänger im Graphen (links = Hauptvariante)
+  const p = L.parent[k], sib = n || p === undefined ? [] : S.moves[p], i = sib.findIndex(m => m.to === k);
+  const ord = sib.length > 1 ? (i > 0 ? '<button data-act="main">Hauptvariante</button><button data-act="up">Nach links</button>' : '') + (i < sib.length - 1 ? '<button data-act="down">Nach rechts</button>' : '') : '';
+  CM.innerHTML = `<button data-act="train">Training ab ${n ? n + 'Stellungen' : 'hier'}</button>${ord}<button data-act="del">${n ? n + 'Züge löschen' : 'Löschen'}</button>`;
   CM.style.left = e.clientX + 'px'; CM.style.top = e.clientY + 'px'; CM.hidden = false;
 });
 CM.onclick = e => {
   const act = attr(e.target as Element, 'data-act'); if (!act || !cmKeys.length) return;
   CM.hidden = true;
-  if (act === 'del') void askDelete(cmKeys); else startTrain(cmKeys);
+  if (act === 'del') void askDelete(cmKeys);
+  else if (act === 'train') startTrain(cmKeys);
+  else void reorder(cmKeys[0], act as 'main' | 'up' | 'down');
 };
+async function reorder(k: string, dir: 'main' | 'up' | 'down') {
+  try { await api('/api/reorder', { rep, from: L.parent[k], to: k, dir }); await load(); refresh(); } catch (e) { toast((e as Error).message); }
+}
 document.addEventListener('pointerdown', e => { if (!CM.contains(e.target as Node)) CM.hidden = true; }, true);
 
 // ---------- Gesamtdarstellung
