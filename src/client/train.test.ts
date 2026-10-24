@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store, type State, type Rep } from '../db';
 import { START_KEY } from '../core';
-import { openMoves, markDone } from './train';
+import { openMoves, markDone, isWeak, weakKeys, WEAK_STREAK, type TrainStat } from './train';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 
 const fresh = () => new Store(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbt-')), 't.db'));
@@ -53,4 +53,40 @@ test('Training: Schwarz, eigene Stellung mit zwei Zügen reicht ein erledigter',
   markDone(S, 'black', [S.root, e4, c5], done);
   assert.ok(done.has(e4) && !done.has(S.root));
   assert.deepEqual(openMoves(S, S.root, new Set([S.root]), done).map(m => m.san), ['d4']);
+});
+
+const st = (ok: number, bad: number, streak: number): TrainStat => ({ ok, bad, streak, last: 0 });
+
+test('isWeak: nur mit Fehlern und kurzer Serie', () => {
+  assert.equal(isWeak(undefined), false);
+  assert.equal(isWeak(st(5, 0, 0)), false);
+  assert.equal(isWeak(st(0, 1, 0)), true);
+  assert.equal(isWeak(st(3, 1, WEAK_STREAK - 1)), true);
+  assert.equal(isWeak(st(3, 1, WEAK_STREAK)), false);
+});
+
+test('weakKeys: nur vorhandene Stellungen mit Zügen, sortiert nach Serie, Fehlern, Fehleranteil', () => {
+  const s = fresh();
+  const e5 = play(s, 'white', 'e4', 'e5'), c5 = play(s, 'white', 'e4', 'c5'), d5 = play(s, 'white', 'd4', 'd5'), e6 = play(s, 'white', 'e4', 'e6');
+  play(s, 'white', 'e4', 'e5', 'Nf3'); play(s, 'white', 'e4', 'c5', 'Nf3'); play(s, 'white', 'd4', 'd5', 'c4'); play(s, 'white', 'e4', 'e6', 'd4');
+  const leaf = play(s, 'white', 'e4', 'e5', 'Nf3', 'Nc6'), S = s.state('white');
+  const stats: Record<string, TrainStat> = {
+    [e5]: st(9, 1, 0), [c5]: st(0, 3, 1), [d5]: st(1, 1, 0), [e6]: st(0, 1, 0),
+    [leaf]: st(0, 5, 0), fehlt: st(0, 5, 0), [S.root]: st(4, 0, 0),
+  };
+  assert.deepEqual(weakKeys(S, stats), [e6, d5, e5, c5]);
+  stats[e5] = st(9, 4, 0);
+  assert.deepEqual(weakKeys(S, stats), [e5, e6, d5, c5]);
+});
+
+test('weakKeys: mit from nur von dort erreichbare Stellungen, inklusive from selbst', () => {
+  const s = fresh();
+  const e4 = play(s, 'white', 'e4'), e5 = play(s, 'white', 'e4', 'e5'), d5 = play(s, 'white', 'd4', 'd5');
+  play(s, 'white', 'e4', 'e5', 'Nf3'); play(s, 'white', 'd4', 'd5', 'c4');
+  const S = s.state('white'), stats = { [e5]: st(0, 1, 0), [d5]: st(0, 2, 0) };
+  assert.deepEqual(weakKeys(S, stats, [e4]), [e5]);
+  assert.deepEqual(weakKeys(S, stats, [d5]), [d5]);
+  assert.deepEqual(weakKeys(S, stats, [e5, d5]), [d5, e5]);
+  assert.deepEqual(weakKeys(S, stats, ['fehlt']), []);
+  assert.deepEqual(weakKeys(S, stats, [S.root]), [d5, e5]);
 });

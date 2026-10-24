@@ -74,3 +74,17 @@ test('Training: nur aufgedeckte Knoten und Kanten, rot vor grün', () => {
   assert.ok(cls(e4).includes('tok') && !cls(e4).includes('tbad'));
   assert.ok(cls(e5).includes('tbad') && !cls(e5).includes('tok'));
 });
+
+test('renderGraph: Schwachstellen mit Klasse weak und Punkt, im Training nicht', () => {
+  const s = fresh();
+  const e5 = play(s, 'e4', 'e5'), d4 = play(s, 'd4');
+  const st = s.state('white'), L = layout(st), e4 = st.moves[START_KEY][0].to;
+  const svg = renderGraph(L, st, d4, 1, undefined, undefined, undefined, new Set([e5]));
+  const cls = (k: string) => { const i = svg.indexOf(`data-k="${k}"`); return svg.slice(svg.lastIndexOf('<g class="', i) + 10, i - 2).split(' '); };
+  assert.ok(cls(e5).includes('weak') && !cls(e4).includes('weak'));
+  assert.equal((svg.match(/class="weakdot"/g) ?? []).length, 1);
+  const p = L.pos[e5];
+  assert.ok(svg.includes(`<circle class="weakdot" cx="${p.x + NODE_W - 7}" cy="${p.y + NODE_H - 7}" r="4"><title>Schwachstelle</title></circle>`));
+  const tr = renderGraph(L, st, e5, 1, undefined, undefined, { shown: new Set([e4, e5]), ok: new Set(), bad: new Set() }, new Set([e5]));
+  assert.ok(!tr.includes('weak'));
+});
