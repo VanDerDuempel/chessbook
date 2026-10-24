@@ -5,14 +5,13 @@ import type { Key } from 'chessground/types';
 import { chessgroundDests } from 'chessops/compat';
 import { parseSquare } from 'chessops/util';
 import { fromFen, playUci, START_KEY } from '../core';
-import { layout, renderGraph, miniBoard, sanHtml, keysInRect, noteDot, NODE_W, NODE_H, type Layout } from './graph';
+import { layout, renderGraph, miniBoard, sanHtml, keysInRect, NODE_W, NODE_H, type Layout } from './graph';
 import { openMoves, markDone, weakKeys, isWeak, type TrainStat } from './train';
 import { findPosition } from './search';
 import type { State, Shape, Rep } from '../db';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T;
 const attr = (el: Element | null, name: string) => el?.closest(`[${name}]`)?.getAttribute(name) ?? null;
-const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
 // ---------- Zustand
 let rep: Rep = 'white';
@@ -42,7 +41,6 @@ function toast(msg: string) {
   setTimeout(() => { t.hidden = true; }, 3500);
 }
 async function load() {
-  await flushNote();
   [S, stats] = await Promise.all([api('/api/state/' + rep), api('/api/train-stats/' + rep)]);
   if (!S.positions[cur]) cur = S.root;
   stack = stack.filter(k => S.positions[k]); fwd = fwd.filter(k => S.positions[k]);
@@ -183,32 +181,6 @@ async function doDelete(keys: string[]) {
   } catch (e) { toast((e as Error).message); }
 }
 
-// ---------- Notiz zur Stellung
-// Wird beim Tippen gespeichert. Im Training erst nach einem Fehler sichtbar (nur lesen), weil sie den Zug verraten kann.
-const NT = $<HTMLTextAreaElement>('#note');
-let noteKey = '', noteT = 0, noteSave: (() => Promise<unknown>) | null = null;
-function drawNote() {
-  void flushNote();
-  const n = S.positions[cur].note ?? '';
-  NT.hidden = !!tr && !(tr.hint && n); NT.readOnly = !!tr;
-  if (noteKey !== cur || document.activeElement !== NT) NT.value = n;
-  noteKey = cur; growNote();
-}
-function growNote() { NT.style.height = 'auto'; NT.style.height = NT.scrollHeight + 2 + 'px'; }
-async function flushNote() { clearTimeout(noteT); const f = noteSave; noteSave = null; await f?.(); }
-NT.addEventListener('input', () => {
-  const r = rep, k = noteKey, v = NT.value, p = S.positions[k]; if (!p) return;
-  const had = !!p.note;
-  if (v.trim()) p.note = v; else delete p.note;
-  if (had !== !!p.note) { const g = [...G.querySelectorAll('.n')].find(n => n.getAttribute('data-k') === k); g?.querySelector('.nd')?.remove(); if (p.note && g) g.insertAdjacentHTML('beforeend', noteDot(L, k)); }
-  growNote(); clearTimeout(noteT);
-  noteSave = () => api('/api/note', { rep: r, key: k, note: v }, 'PUT').catch(e => toast((e as Error).message));
-  noteT = window.setTimeout(() => void flushNote(), 500);
-});
-NT.addEventListener('blur', () => void flushNote());
-NT.addEventListener('keydown', e => { if (e.key === 'Escape') NT.blur(); });
-addEventListener('beforeunload', () => void flushNote());
-
 // ---------- Graph
 const G = $('#graph');
 function drawGraph() {
@@ -305,11 +277,10 @@ function hidePv() { PV.hidden = true; pvKey = null; }
 G.addEventListener('mousemove', e => {
   const k = pan || lasso || tr ? null : attr(e.target as Element, 'data-k');
   if (!k || !S.positions[k]) { hidePv(); return; }
-  if (pvKey !== k) { pvKey = k; const st = stats[k], n = S.positions[k].note; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}${st ? ` <b class="ok">✓ ${st.ok}</b> <b class="bad">✗ ${st.bad}</b>` : ''}</div>` + (n ? `<div class="pn">${esc(n)}</div>` : ''); }
+  if (pvKey !== k) { pvKey = k; const st = stats[k]; PV.innerHTML = miniBoard(S.positions[k].fen, orientation() === 'black') + `<div class="t">${(L.num[k] ?? '') + (L.san[k] ?? '')}${st ? ` <b class="ok">✓ ${st.ok}</b> <b class="bad">✗ ${st.bad}</b>` : ''}</div>`; }
   let x = e.clientX + 18, y = e.clientY + 18;
   if (x + 212 > innerWidth) x = e.clientX - 222;
-  const h = PV.offsetHeight || 236;
-  if (y + h > innerHeight) y = e.clientY - h - 10;
+  if (y + 236 > innerHeight) y = e.clientY - 246;
   PV.style.left = Math.max(4, x) + 'px'; PV.style.top = Math.max(4, y) + 'px'; PV.hidden = false;
 });
 G.addEventListener('mouseleave', hidePv);
@@ -346,7 +317,7 @@ document.addEventListener('pointerdown', e => { if (!CM.contains(e.target as Nod
 
 // ---------- Gesamtdarstellung
 function refresh() {
-  syncBoard(); drawPromo(); drawPath(); drawNote(); drawGraph(); drawPending();
+  syncBoard(); drawPromo(); drawPath(); drawGraph(); drawPending();
   $('#tw').className = rep === 'white' ? 'on' : ''; $('#tb').className = rep === 'black' ? 'on' : '';
   ($('#lic') as HTMLAnchorElement).href = lichessUrl();
   showMarks();
@@ -515,6 +486,7 @@ type Target = Rep | 'both';
 const TNAME: Record<Target, string> = { white: 'Weiß', black: 'Schwarz', both: 'Beide' };
 let tgt: Target = 'white', tgtJson = false;
 const isJson = () => txt.value.trim().startsWith('{');
+const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const de = (x: number) => x.toLocaleString('de-DE');
 const kpi = (v: string | number, l: string) => `<div><b>${typeof v === 'number' ? de(v) : v}</b><span>${l}</span></div>`;
 function renderTarget(reset = false) {
@@ -547,7 +519,7 @@ $('#imp').onclick = async () => {
       ? await api('/api/import-json', { data: JSON.parse(t), reps: to === 'both' ? ['white', 'black'] : [to] })
       : await api('/api/import-pgn', { rep: to, text: t });
     out.innerHTML = `<div class="okbox"><div class="ph"><i>✓</i><div><b>Importiert: ${to === 'both' ? 'Weiß + Schwarz' : TNAME[to]}</b></div></div>
-      <div class="kpis">${kpi(r.positions, 'Stellungen')}${kpi(r.moves, 'Züge')}${kpi(r.skipped, 'übersprungen')}${kpi(r.shapes, 'Pfeile/Kreise')}${r.notes ? kpi(r.notes, 'Notizen') : ''}</div></div>`;
+      <div class="kpis">${kpi(r.positions, 'Stellungen')}${kpi(r.moves, 'Züge')}${kpi(r.skipped, 'übersprungen')}${kpi(r.shapes, 'Pfeile/Kreise')}</div></div>`;
     out.scrollIntoView({ block: 'nearest' });
     await load(); refresh();
   } catch (e) { out.innerHTML = `<div class="note err">Fehler: ${e instanceof SyntaxError ? 'JSON fehlerhaft' : esc((e as Error).message)}</div>`; }

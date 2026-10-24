@@ -11,12 +11,11 @@ export interface MoveRow { san: string; uci: string; to: string }
 export interface TrainStat { ok: number; bad: number; streak: number; last: number }
 export interface State {
   root: string;
-  positions: Record<string, { fen: string; shapes: Shape[]; note?: string }>;
+  positions: Record<string, { fen: string; shapes: Shape[] }>;
   moves: Record<string, MoveRow[]>;
 }
 
 const REPS: Rep[] = ['white', 'black'];
-export const NOTE_MAX = 5000;
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS positions(
   repertoire TEXT NOT NULL CHECK(repertoire IN ('white','black')),
@@ -47,17 +46,8 @@ export class Store {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.db.exec(SCHEMA);
-    this.migrate();
     const ins = this.db.prepare('INSERT OR IGNORE INTO positions(repertoire,key,fen) VALUES(?,?,?)');
     for (const r of REPS) ins.run(r, START_KEY, START_FEN);
-  }
-
-  /** Schema-Version in PRAGMA user_version. 1 und 2 stammen aus früheren Versionen (Rochade-Umstellung), 3: Spalte positions.note.
-   *  Die Spalte wird zusätzlich direkt geprüft, damit auch Datenbanken mit unpassender Versionsnummer sie bekommen. */
-  private migrate() {
-    const cols = this.db.prepare('PRAGMA table_info(positions)').all() as { name: string }[];
-    if (!cols.some(c => c.name === 'note')) this.db.exec("ALTER TABLE positions ADD COLUMN note TEXT NOT NULL DEFAULT ''");
-    if ((this.db.pragma('user_version', { simple: true }) as number) < 3) this.db.pragma('user_version = 3');
   }
 
   /** Zwischenspeicher für Eröffnungsdaten (spart Anfragen an Lichess). */
@@ -87,8 +77,8 @@ export class Store {
 
   state(rep: Rep): State {
     const positions: State['positions'] = {};
-    for (const r of this.db.prepare('SELECT key,fen,shapes,note FROM positions WHERE repertoire=?').all(rep) as any[])
-      positions[r.key] = { fen: r.fen, shapes: JSON.parse(r.shapes), ...(r.note ? { note: r.note } : {}) };
+    for (const r of this.db.prepare('SELECT key,fen,shapes FROM positions WHERE repertoire=?').all(rep) as any[])
+      positions[r.key] = { fen: r.fen, shapes: JSON.parse(r.shapes) };
     const moves: State['moves'] = {};
     for (const r of this.db.prepare('SELECT from_key,to_key,uci,san FROM moves WHERE repertoire=? ORDER BY ord').all(rep) as any[])
       (moves[r.from_key] ??= []).push({ san: r.san, uci: r.uci, to: r.to_key });
@@ -196,22 +186,6 @@ export class Store {
     this.db.prepare('UPDATE positions SET shapes=? WHERE repertoire=? AND key=?').run(JSON.stringify(shapes), rep, key);
   }
 
-  setNote(rep: Rep, key: string, note: string) {
-    if (typeof note !== 'string') throw new Error('note muss Text sein');
-    if (note.length > NOTE_MAX) throw new Error(`Notiz zu lang (höchstens ${NOTE_MAX} Zeichen)`);
-    this.fenOf(rep, key);
-    this.db.prepare('UPDATE positions SET note=? WHERE repertoire=? AND key=?').run(note.trim(), rep, key);
-  }
-
-  /** Hängt Text an die Notiz an, falls er dort noch nicht steht (Importe bleiben so idempotent). */
-  mergeNote(rep: Rep, key: string, add: unknown) {
-    const text = typeof add === 'string' ? add.trim() : '';
-    const row = this.db.prepare('SELECT note FROM positions WHERE repertoire=? AND key=?').get(rep, key) as { note: string } | undefined;
-    if (!text || !row || row.note.includes(text)) return 0;
-    this.setNote(rep, key, ((row.note ? row.note + '\n' : '') + text).slice(0, NOTE_MAX));
-    return 1;
-  }
-
   /** Fügt Pfeile und Kreise zu den vorhandenen hinzu (ohne Doppelte). */
   mergeShapes(rep: Rep, key: string, add: Shape[]) {
     const row = this.db.prepare('SELECT shapes FROM positions WHERE repertoire=? AND key=?').get(rep, key) as { shapes: string } | undefined;
@@ -224,11 +198,9 @@ export class Store {
     return fresh.length;
   }
 
-  /** Liest ein PGN (mit Varianten) in das angegebene Repertoire ein. Pfeile und Kreise aus [%cal]/[%csl] werden übernommen,
-   *  Kommentartext wird zur Notiz der Stellung nach dem Zug (Kommentar vor dem ersten Zug: Startstellung). */
+  /** Liest ein PGN (mit Varianten) in das angegebene Repertoire ein. Pfeile und Kreise aus [%cal]/[%csl] werden übernommen. */
   importPgn(rep: Rep, text: string) {
-    const stats = { games: 0, positions: 0, moves: 0, skipped: 0, shapes: 0, notes: 0 };
-    const note = (cs: string[] | undefined) => (cs ?? []).map(c => parseComment(c).text).filter(Boolean).join('\n');
+    const stats = { games: 0, positions: 0, moves: 0, skipped: 0, shapes: 0 };
     this.backup('vor-pgn-import');
     this.db.transaction(() => {
       for (const game of parsePgn(text)) {
@@ -236,14 +208,12 @@ export class Store {
         try { start = startingPosition(game.headers).unwrap(); } catch { stats.skipped++; continue; }
         if (keyOf(start as any) !== START_KEY) { stats.skipped++; continue; }
         stats.games++;
-        stats.notes += this.mergeNote(rep, START_KEY, note(game.comments));
         const walk = (node: Node<PgnNodeData>, key: string) => {
           for (const child of node.children) {
             let r;
             try { r = this.addSan(rep, key, child.data.san); } catch { stats.skipped++; continue; }
             if (r.newPosition) stats.positions++;
             if (r.newMove) stats.moves++;
-            stats.notes += this.mergeNote(rep, r.toKey, note(child.data.comments));
             const shapes: Shape[] = (child.data.comments ?? []).flatMap(c => parseComment(c).shapes).map(sh => ({
               orig: makeSquare(sh.from), ...(sh.from !== sh.to ? { dest: makeSquare(sh.to) } : {}), brush: sh.color }));
             if (shapes.length) stats.shapes += this.mergeShapes(rep, r.toKey, shapes);
@@ -261,15 +231,13 @@ export class Store {
     const st = this.state(rep);
     const game = defaultGame<PgnNodeData>(() => new Map([
       ['Event', `Chessbook ${rep === 'white' ? 'Weiß' : 'Schwarz'}`], ['Site', 'lokal'], ['Result', '*']]));
-    const rootNote = st.positions[START_KEY]?.note;
-    if (rootNote) game.comments = [rootNote];
     const seen = new Set([START_KEY]);
     const build = (key: string, node: Node<PgnNodeData>) => {
       for (const m of st.moves[key] ?? []) {
         const child = new ChildNode<PgnNodeData>({ san: m.san });
-        const shapes = st.positions[m.to]?.shapes ?? [], note = st.positions[m.to]?.note;
-        if ((shapes.length || note) && !seen.has(m.to))
-          child.data.comments = [makeComment({ ...(note ? { text: note } : {}), shapes: shapes.map(x => ({
+        const shapes = st.positions[m.to]?.shapes ?? [];
+        if (shapes.length && !seen.has(m.to))
+          child.data.comments = [makeComment({ shapes: shapes.map(x => ({
             color: x.brush as CommentShapeColor, from: parseSquare(x.orig)!, to: parseSquare(x.dest ?? x.orig)! })) })];
         node.children.push(child);
         if (!seen.has(m.to)) { seen.add(m.to); build(m.to, child); }
@@ -283,7 +251,7 @@ export class Store {
   importJson(data: any, reps: Rep[] = REPS) {
     if (!reps.length) throw new Error('Kein Repertoire gewählt');
     for (const rep of reps) if (!data?.[rep]?.positions || !data[rep].moves) throw new Error(`Ungültiges Format (${rep})`);
-    const stats = { positions: 0, moves: 0, skipped: 0, shapes: 0, notes: 0 };
+    const stats = { positions: 0, moves: 0, skipped: 0, shapes: 0 };
     this.backup('vor-import');
     this.db.transaction(() => {
       for (const rep of reps) {
@@ -303,10 +271,8 @@ export class Store {
             } catch { stats.skipped++; }
           }
         }
-        for (const [key, pos] of Object.entries<any>(g.positions)) {
+        for (const [key, pos] of Object.entries<any>(g.positions))
           if (pos?.shapes?.length) stats.shapes += this.mergeShapes(rep, key, pos.shapes);
-          if (pos?.note) stats.notes += this.mergeNote(rep, key, pos.note);
-        }
       }
     })();
     return stats;

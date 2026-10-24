@@ -128,7 +128,6 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && p === '/api/games/check') return send(res, 200, await checkOwnGames(b.max));
       if (req.method === 'POST' && p === '/api/move-san') return send(res, 200, store.addSan(rep(b.rep), String(b.from), String(b.san)));
       if (req.method === 'PUT' && p === '/api/shapes') { store.setShapes(rep(b.rep), String(b.key), b.shapes); return send(res, 200, { ok: true }); }
-      if (req.method === 'PUT' && p === '/api/note') { store.setNote(rep(b.rep), String(b.key), b.note); return send(res, 200, { ok: true }); }
       if (req.method === 'POST' && p === '/api/import-json') {
         // Alt: Export-JSON direkt als Body. Neu: {data, reps?}
         if (b.white && b.black) return send(res, 200, store.importJson(b));

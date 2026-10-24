@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { Store } from './db';
 import { START_KEY } from './core';
 
@@ -87,49 +86,11 @@ test('Ungültige Importdaten werden abgelehnt, ohne eine Sicherung anzulegen', (
 test('PGN-Import mit Varianten und Pfeilen', () => {
   const s = fresh();
   const r = s.importPgn('white', '[Event "x"]\n\n1. e4 {[%cal Ge2e4][%csl Rd4]} e5 (1... c5 2. Nf3) 2. Nf3 *');
-  assert.deepEqual(r, { games: 1, positions: 5, moves: 5, skipped: 0, shapes: 2, notes: 0 });
+  assert.deepEqual(r, { games: 1, positions: 5, moves: 5, skipped: 0, shapes: 2 });
   const st = s.state('white');
   const e4 = st.moves[START_KEY][0].to;
   assert.deepEqual(st.positions[e4].shapes, [{ orig: 'e2', dest: 'e4', brush: 'green' }, { orig: 'd4', brush: 'red' }]);
   assert.equal(s.importPgn('white', '1. e4 e5 *').moves, 0);
-});
-
-test('Notizen: speichern, leeren, Kommentare aus PGN übernehmen ohne Doppelte', () => {
-  const s = fresh();
-  const e4 = play(s, 'e4');
-  s.setNote('white', e4, '  Plan: d4  ');
-  assert.equal(s.state('white').positions[e4].note, 'Plan: d4');
-  s.setNote('white', e4, '');
-  assert.equal(s.state('white').positions[e4].note, undefined);
-  assert.throws(() => s.setNote('white', 'gibt es nicht', 'x'));
-  assert.throws(() => s.setNote('white', e4, 'x'.repeat(5001)), /zu lang/);
-  const pgn = '{Grundidee} 1. e4 {Zentrum [%cal Gd2d4]} e5 {Spiegel} 2. Nf3 *';
-  assert.equal(s.importPgn('white', pgn).notes, 3);
-  const st = s.state('white');
-  const e5 = st.moves[e4][0].to;
-  assert.equal(st.positions[START_KEY].note, 'Grundidee');
-  assert.equal(st.positions[e4].note, 'Zentrum');
-  assert.equal(st.positions[e5].note, 'Spiegel');
-  assert.equal(s.importPgn('white', pgn).notes, 0);
-  s.importPgn('white', '1. e4 {Alternative: c4} *');
-  assert.equal(s.state('white').positions[e4].note, 'Zentrum\nAlternative: c4');
-});
-
-test('Alte Datenbank ohne Notizspalte wird beim Öffnen ergänzt (auch mit Version 2 aus früheren Versionen)', () => {
-  for (const version of [0, 2]) {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cb-')), 't.db');
-    const raw = new Database(file);
-    raw.exec(`CREATE TABLE positions(repertoire TEXT NOT NULL, key TEXT NOT NULL, fen TEXT NOT NULL, shapes TEXT NOT NULL DEFAULT '[]', PRIMARY KEY(repertoire,key))`);
-    raw.pragma(`user_version = ${version}`);
-    raw.close();
-    const s = new Store(file);
-    const e4 = play(s, 'e4');
-    s.setNote('white', e4, 'geht');
-    assert.equal(new Store(file).state('white').positions[e4].note, 'geht');
-    const check = new Database(file, { readonly: true });
-    assert.equal(check.pragma('user_version', { simple: true }), 3);
-    check.close();
-  }
 });
 
 test('PGN-Export und erneuter Import ergeben denselben Graphen (auch mit Transpositionen)', () => {
@@ -139,8 +100,6 @@ test('PGN-Export und erneuter Import ergeben denselben Graphen (auch mit Transpo
   play(a, 'd4', 'd5');
   const e4 = a.state('white').moves[START_KEY][0].to;
   a.setShapes('white', e4, [{ orig: 'e2', dest: 'e4', brush: 'blue' }]);
-  a.setNote('white', e4, 'Zeile 1 {mit Klammer}\nZeile 2');
-  a.setNote('white', START_KEY, 'Start');
   const pgn = a.exportPgn('white');
   const b = fresh();
   b.importPgn('white', pgn);
@@ -149,20 +108,14 @@ test('PGN-Export und erneuter Import ergeben denselben Graphen (auch mit Transpo
   const edges = (st: typeof sa) => Object.entries(st.moves).flatMap(([f, ms]) => ms.map(m => `${f}>${m.uci}>${m.to}`)).sort();
   assert.deepEqual(edges(sb), edges(sa));
   assert.deepEqual(sb.positions[e4].shapes, [{ orig: 'e2', dest: 'e4', brush: 'blue' }]);
-  assert.equal(sb.positions[START_KEY].note, 'Start');
-  assert.match(sb.positions[e4].note!, /^Zeile 1 .*mit Klammer.*\nZeile 2$/);
 });
 
 test('Export dieses Programms lässt sich wieder einlesen', () => {
   const a = fresh();
   play(a, 'e4', 'c5', 'Nf3');
-  a.setNote('white', START_KEY, 'Sizilianisch vermeiden?');
   const b = fresh();
   const r = b.importJson(a.exportAll());
   assert.equal(r.skipped, 0);
-  assert.equal(r.notes, 1);
-  assert.equal(b.state('white').positions[START_KEY].note, 'Sizilianisch vermeiden?');
-  assert.equal(b.importJson(a.exportAll()).notes, 0);
   assert.deepEqual(Object.keys(b.state('white').positions).sort(), Object.keys(a.state('white').positions).sort());
 });
 

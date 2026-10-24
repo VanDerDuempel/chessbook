@@ -21,17 +21,6 @@ test('Layout: Eltern mittig über den Kindern, keine Überlappung, Startstellung
   assert.equal(L.num[e4] + L.san[e4], '1.e4'); assert.equal(L.side[st.moves[e4][0].to], 'b');
 });
 
-test('Graph: Stellungen mit Notiz bekommen einen Punkt, im Training nicht', () => {
-  const s = fresh();
-  const a = play(s, 'e4'); play(s, 'd4');
-  s.setNote('white', a, 'Notiz');
-  const st = s.state('white'), L = layout(st);
-  const svg = renderGraph(L, st, START_KEY, 1);
-  assert.equal(svg.match(/class="nd"/g)?.length, 1);
-  assert.ok(svg.indexOf('class="nd"') > svg.indexOf(`data-k="${a}"`));
-  assert.ok(!renderGraph(L, st, START_KEY, 1, undefined, undefined, { shown: new Set([a]), ok: new Set(), bad: new Set() }).includes('class="nd"'));
-});
-
 test('Layout: Transposition zählt Vorgänger und bleibt ein Knoten', () => {
   const s = fresh();
   const a = play(s, 'e4', 'e5', 'Nf3', 'Nc6'); play(s, 'Nf3', 'Nc6', 'e4', 'e5');
