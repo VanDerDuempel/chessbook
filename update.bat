@@ -6,7 +6,7 @@ git fetch origin || goto :fehler
 git reset --hard origin/main || goto :fehler
 call npm install || goto :fehler
 echo.
-echo Update fertig. Starten mit: npm start
+echo Update fertig. Starten mit start.bat (Doppelklick)
 pause
 exit /b 0
 :fehler

@@ -5,6 +5,9 @@ Lokales Schach-Repertoire-Tool mit einem Weiß- und einem Schwarz-Repertoire. Di
 ## Starten
 Voraussetzung: Node.js 18 oder neuer (`node -v`).
 
+**Windows:** Doppelklick auf `start.bat` (beim ersten Mal installiert sie die Pakete). Sie startet den Server und öffnet http://localhost:3000 im Browser. Läuft der Server schon, öffnet sie nur den Browser. Das Fenster muss offen bleiben, solange du arbeitest. Schließen beendet den Server. Für eine Verknüpfung auf dem Desktop oder in der Taskleiste: Rechtsklick auf `start.bat` → „Verknüpfung erstellen“.
+
+**Sonst:**
 ```
 npm install
 npm start

@@ -2,6 +2,11 @@
 
 Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 
+## 2026-11-06
+
+### Neu
+- `start.bat`: Doppelklick startet Chessbook und öffnet den Browser. Läuft der Server schon, wird nur der Browser geöffnet.
+
 ## 2026-10-24
 
 ### Neu
