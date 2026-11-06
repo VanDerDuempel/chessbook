@@ -56,7 +56,7 @@ const SOURCES: [string, string, string][] = [
 const tokenHtml = (c: PublicConfig) => c.tokenSet && !editToken
   ? `<div class="stat"><i></i>Lichess verbunden<button class="link" data-act="chtok">Ändern</button></div>`
   : `<label class="fld"><span class="lb">Lichess-Token</span><span class="inl"><input class="tok" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
-     <p class="hint"><a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">Token erstellen ↗</a></p>`;
+     <p class="hint"><a href="https://lichess.org/account/oauth/token/create?description=Chessbook" target="_blank" rel="noopener">Token erstellen ↗</a></p>`;
 async function tokenAct(act: string | undefined, b: HTMLElement | null) {
   if (act === 'chtok') editToken = true;
   else if (act === 'savetok') { gapCfg = await api('/api/gaps-config', { lichessToken: b?.closest('.fld')?.querySelector<HTMLInputElement>('input.tok')?.value ?? '' }, 'PUT'); editToken = false; }
