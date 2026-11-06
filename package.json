@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Lokales Schach-Repertoire-Tool",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "prestart": "node scripts/build.mjs",
     "start": "tsx src/server.ts",

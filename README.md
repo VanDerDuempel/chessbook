@@ -25,5 +25,5 @@ Tasten: ← → ↑ ↓ navigieren, F Brett drehen, / suchen (Züge, PGN oder FE
 ## Sicherungen
 Automatisch in `data/backups/` (beim Start, vor Importen und vor dem Löschen, die neuesten 30). Wiederherstellen: Chessbook schließen, eine Sicherung nach `data/chessbook.db` kopieren und `chessbook.db-wal` und `chessbook.db-shm` löschen.
 
-## Bausteine
-[chessground](https://github.com/lichess-org/chessground) und [chessops](https://github.com/niklasf/chessops) (GPL-3.0), Figuren „cburnett“ von Colin M.L. Burnett, better-sqlite3.
+## Lizenz
+GPL-3.0 oder neuer, siehe [LICENSE](LICENSE). Bausteine: [chessground](https://github.com/lichess-org/chessground) und [chessops](https://github.com/niklasf/chessops) (GPL-3.0), Figuren „cburnett“ von Colin M.L. Burnett (GPL-2.0 oder neuer), better-sqlite3 (MIT).
