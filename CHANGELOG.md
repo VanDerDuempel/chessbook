@@ -22,6 +22,9 @@ Alle nennenswerten Änderungen am Projekt, die neuesten oben.
 - Training: Fehlerfrei gespielte Varianten kommen in derselben Runde nicht wieder, Varianten mit Fehler schon. Sind alle geschafft, beginnt eine neue Runde. Vorher wählte der Gegner rein zufällig, sodass manche Varianten mehrfach und andere kaum drankamen.
 - Training: Der Graph ist nicht mehr verschwommen, sondern deckt sich beim Spielen auf. Fehlerfrei geschaffte Stellungen werden grün. Nach einem Fehler wird die Variante nur bis zur Fehlerstelle aufgedeckt, die rot bleibt, bis die Variante fehlerfrei nachgespielt ist. Jede neue Runde beginnt verdeckt.
 
+### Behoben
+- Partien: Die Vorschlagsliste der Account-Suche wurde am Dialogrand abgeschnitten, jetzt ragt sie darüber hinaus.
+
 ## 2026-10-23
 
 ### Neu

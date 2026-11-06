@@ -4,8 +4,5 @@ node_modules/
 public/app.js
 public/css/
 
-# Arbeitskopien von Agents
-.claude/worktrees/
-
 # Lokale Daten (Datenbank, Config, Backups) – nie ins Repo, nie überschreiben
 data/
