@@ -143,12 +143,15 @@ test('Ungültiges Format im nicht gewählten Repertoire stört nicht', () => {
   assert.throws(() => b.importJson(data, []));
 });
 
-test('Zugreihenfolge: Hauptvariante, vor und zurück, wirkt auf State und PGN-Export', () => {
+test('Zugreihenfolge: vor und zurück, wirkt auf State und PGN-Export', () => {
   const s = fresh();
   play(s, 'e4'); play(s, 'd4'); play(s, 'c4');
   const sans = () => s.state('white').moves[START_KEY].map(m => m.san);
   const to = (san: string) => s.state('white').moves[START_KEY].find(m => m.san === san)!.to;
-  s.reorderMove('white', START_KEY, to('c4'), 'main');
+  s.reorderMove('white', START_KEY, to('c4'), 'up');
+  assert.deepEqual(sans(), ['e4', 'c4', 'd4']);
+  s.reorderMove('white', START_KEY, to('c4'), 'up');
+  s.reorderMove('white', START_KEY, to('c4'), 'up');
   assert.deepEqual(sans(), ['c4', 'e4', 'd4']);
   s.reorderMove('white', START_KEY, to('e4'), 'down');
   assert.deepEqual(sans(), ['c4', 'd4', 'e4']);
@@ -159,7 +162,7 @@ test('Zugreihenfolge: Hauptvariante, vor und zurück, wirkt auf State und PGN-Ex
   assert.match(s.exportPgn('white'), /^1\. d4 \( 1\. c4 \) \( 1\. e4 \)/m);
   play(s, 'b3');
   assert.deepEqual(sans(), ['d4', 'c4', 'e4', 'b3']);
-  assert.throws(() => s.reorderMove('white', START_KEY, 'gibt es nicht', 'main'), /unbekannt/);
+  assert.throws(() => s.reorderMove('white', START_KEY, 'gibt es nicht', 'up'), /unbekannt/);
 });
 
 test('Trainingsstatistik: Zählen und Serie, Fehler setzt die Serie zurück', () => {

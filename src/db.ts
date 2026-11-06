@@ -139,13 +139,13 @@ export class Store {
     return { removed: dead.length };
   }
 
-  /** Zugreihenfolge ändern: der Zug von `from` nach `to` wird Hauptvariante ('main') oder rückt eine Stelle vor ('up') bzw. zurück ('down'). */
-  reorderMove(rep: Rep, from: string, to: string, dir: 'main' | 'up' | 'down') {
+  /** Zugreihenfolge ändern: der Zug von `from` nach `to` rückt eine Stelle vor ('up', vorn = Hauptvariante) bzw. zurück ('down'). */
+  reorderMove(rep: Rep, from: string, to: string, dir: 'up' | 'down') {
     return this.db.transaction(() => {
       const rows = this.db.prepare('SELECT uci,to_key FROM moves WHERE repertoire=? AND from_key=? ORDER BY ord').all(rep, from) as { uci: string; to_key: string }[];
       const i = rows.findIndex(r => r.to_key === to);
       if (i < 0) throw new Error('Zug unbekannt');
-      const j = dir === 'main' ? 0 : dir === 'up' ? Math.max(0, i - 1) : Math.min(rows.length - 1, i + 1);
+      const j = dir === 'up' ? Math.max(0, i - 1) : Math.min(rows.length - 1, i + 1);
       rows.splice(j, 0, ...rows.splice(i, 1));
       const up = this.db.prepare('UPDATE moves SET ord=? WHERE repertoire=? AND from_key=? AND uci=?');
       rows.forEach((r, n) => up.run(n + 1, rep, from, r.uci));

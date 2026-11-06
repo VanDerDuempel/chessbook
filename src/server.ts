@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store, type Rep } from './db';
-import { ExplorerClient, type ExplorerProgress } from './explorer';
-import { scanGaps, type Gap, type OwnGap } from './gaps';
-import { loadConfig, saveConfig, patchConfig } from './config';
+import { ExplorerClient } from './explorer';
+import { scanGaps, type GapJob } from './gaps';
+import { loadConfig, saveConfig, patchConfig, publicConfig } from './config';
 import { fetchGames, checkGames, searchUsers } from './games';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,18 +17,16 @@ store.backup('start', 12 * 3600_000);
 // Lücken-Erkennung: Einstellungen (inkl. Lichess-Token) liegen nur lokal in data/config.json
 const CONFIG_FILE = path.join(path.dirname(DB_FILE), 'config.json');
 let config = loadConfig(CONFIG_FILE);
-const publicConfig = () => ({ tokenSet: !!config.lichessToken, source: config.source, player: config.player, players: config.players, playerColor: config.playerColor, thresholds: config.thresholds, accounts: config.accounts });
-// indexing: Lichess liest den Spieler gerade ein (Warteschlange, bisher gezählte Partien), sonst null
-interface Job { state: 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: Gap[]; own: OwnGap[]; source: string; player: string; color: string; indexing: ExplorerProgress | null }
-const jobs: Partial<Record<Rep, Job>> = {};
+const jobs: Partial<Record<Rep, GapJob>> = {};
+const NO_JOB: GapJob = { state: 'none', queried: 0, open: 0, message: '', gaps: [], own: [], source: '', player: '', color: '', indexing: null };
 let scanning = false;
-function startScan(rep: Rep): Job {
+function startScan(rep: Rep): GapJob {
   if (scanning) throw new Error('Es läuft bereits eine Suche. Bitte warten.');
   if (config.source === 'player' && !config.player) throw new Error('Bitte zuerst einen Spieler auswählen.');
   scanning = true;
   // Beim Spieler gilt standardmäßig die Seite des Gegners: bei deinem Weiß-Repertoire seine Partien mit Schwarz und umgekehrt
   const color = config.playerColor === 'auto' ? (rep === 'white' ? 'black' : 'white') : config.playerColor;
-  const job: Job = { state: 'running', queried: 0, open: 0, message: '', gaps: [], own: [], source: config.source, player: config.player, color, indexing: null };
+  const job: GapJob = { ...NO_JOB, state: 'running', source: config.source, player: config.player, color };
   jobs[rep] = job;
   const client = new ExplorerClient({
     token: config.lichessToken, settings: { source: config.source, player: config.player, color },
@@ -94,9 +92,9 @@ const server = http.createServer(async (req, res) => {
 
     if (p.startsWith('/api/')) {
       if (req.method === 'GET') {
-        if (p === '/api/gaps-config') return send(res, 200, publicConfig());
+        if (p === '/api/gaps-config') return send(res, 200, publicConfig(config));
         if (p === '/api/lichess/users') return send(res, 200, { users: await searchUsers({ term: url.searchParams.get('term') ?? '', token: config.lichessToken, baseUrl: process.env.CHESSBOOK_LICHESS_URL }) });
-        if (p.startsWith('/api/gaps/')) return send(res, 200, jobs[rep(p.slice(10))] ?? { state: 'none', queried: 0, open: 0, message: '', gaps: [], own: [], source: '', player: '', color: '', indexing: null });
+        if (p.startsWith('/api/gaps/')) return send(res, 200, jobs[rep(p.slice(10))] ?? NO_JOB);
         if (p === '/api/export') return send(res, 200, store.exportAll());
         if (p.startsWith('/api/export-pgn/')) {
           res.writeHead(200, { 'content-type': 'application/x-chess-pgn; charset=utf-8' });
@@ -111,10 +109,13 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && p === '/api/move') return send(res, 200, store.addMove(rep(b.rep), String(b.from), String(b.uci)));
       if (req.method === 'POST' && p === '/api/reorder') {
         const d = String(b.dir);
-        if (d !== 'main' && d !== 'up' && d !== 'down') throw new Error('Richtung ungültig');
+        if (d !== 'up' && d !== 'down') throw new Error('Richtung ungültig');
         return send(res, 200, store.reorderMove(rep(b.rep), String(b.from), String(b.to), d));
       }
-      if (req.method === 'POST' && p === '/api/delete') return send(res, 200, store.deleteNodes(rep(b.rep), Array.isArray(b.keys) ? b.keys.map(String) : [String(b.key)], !!b.dry));
+      if (req.method === 'POST' && p === '/api/delete') {
+        if (!Array.isArray(b.keys)) throw new Error('keys muss eine Liste sein');
+        return send(res, 200, store.deleteNodes(rep(b.rep), b.keys.map(String), !!b.dry));
+      }
       if (req.method === 'POST' && p === '/api/train-result') {
         if (typeof b.ok !== 'boolean') throw new Error('ok muss true oder false sein');
         return send(res, 200, store.recordTrain(rep(b.rep), String(b.key), b.ok));
@@ -123,14 +124,12 @@ const server = http.createServer(async (req, res) => {
         if (b.keys !== undefined && !Array.isArray(b.keys)) throw new Error('keys muss eine Liste sein');
         return send(res, 200, store.resetTrain(rep(b.rep), b.keys?.map(String)));
       }
-      if (req.method === 'PUT' && p === '/api/gaps-config') { config = patchConfig(config, b); saveConfig(CONFIG_FILE, config); return send(res, 200, publicConfig()); }
+      if (req.method === 'PUT' && p === '/api/gaps-config') { config = patchConfig(config, b); saveConfig(CONFIG_FILE, config); return send(res, 200, publicConfig(config)); }
       if (req.method === 'POST' && p === '/api/gaps/scan') return send(res, 200, startScan(rep(b.rep)));
       if (req.method === 'POST' && p === '/api/games/check') return send(res, 200, await checkOwnGames(b.max));
       if (req.method === 'POST' && p === '/api/move-san') return send(res, 200, store.addSan(rep(b.rep), String(b.from), String(b.san)));
       if (req.method === 'PUT' && p === '/api/shapes') { store.setShapes(rep(b.rep), String(b.key), b.shapes); return send(res, 200, { ok: true }); }
       if (req.method === 'POST' && p === '/api/import-json') {
-        // Alt: Export-JSON direkt als Body. Neu: {data, reps?}
-        if (b.white && b.black) return send(res, 200, store.importJson(b));
         if (b.reps !== undefined && !Array.isArray(b.reps)) throw new Error('reps muss eine Liste sein');
         return send(res, 200, store.importJson(b.data, b.reps?.map(rep)));
       }

@@ -1,8 +1,11 @@
 // Lücken-Erkennung (Vergleich mit den häufigsten Zügen auf Lichess) und Abgleich mit den eigenen Lichess-Partien
-import { sanHtml } from './graph';
+import { sanHtml, moveNum, plySide, numbered } from './graph';
 import { pinBox, sameName } from './pinbox';
 import { $, api, toast, esc, de, kpi } from './ui';
 import type { State, Rep } from '../db';
+import type { GapJob } from '../gaps';
+import type { PublicConfig } from '../config';
+import type { CheckResult, Deviation } from '../games';
 
 /** Was die Dialoge aus app.ts brauchen; wird einmal per initLichess übergeben. */
 export interface LichessCtx { rep(): Rep; S(): State; pathTo(k: string): [string, string][]; go(k: string): void; load(): Promise<void>; refresh(): void; drawGraph(): void }
@@ -10,19 +13,34 @@ let app!: LichessCtx;
 export function initLichess(ctx: LichessCtx) { app = ctx; }
 
 // ---------- Lücken
-interface GapRow { key: string; san: string; games: number; share: number; reach: number }
-interface GapJob { state: 'none' | 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: GapRow[]; own: { key: string; reach: number }[]; source: string; player: string; color: string; indexing?: { queue: number | null; games: number } | null }
-interface GapCfg { tokenSet: boolean; source: 'masters' | 'lichess' | 'player'; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds?: Partial<Record<GapCfg['source'], { minShare: number; minGames: number }>>; accounts?: string[]; players?: string[] }
 const gapJobs: Record<Rep, GapJob | null> = { white: null, black: null };
 export let gapKeys = new Set<string>();
-let gapCfg: GapCfg | null = null, gapTimer = 0, editToken = false;
+let gapCfg: PublicConfig | null = null, gapTimer = 0, editToken = false;
 const gdlg = $<HTMLDialogElement>('#gdlg');
 const pct = (x: number) => (x * 100).toLocaleString('de-DE', { maximumFractionDigits: x < 0.1 ? 1 : 0 }) + ' %';
 function pathText(k: string) {
-  const p = app.pathTo(k).map(([, san], i) => (i % 2 ? san : `${i / 2 + 1}.${san}`));
+  const p = numbered(app.pathTo(k).map(([, san]) => san));
   if (!p.length) return 'Startstellung';
   const from = Math.max(0, p.length - 10), start = from - (from % 2);
   return (start ? '… ' : '') + p.slice(start).join(' ');
+}
+
+// Ergebniszeilen beider Dialoge: Zugfolge bis zur Stellung, darunter Details, rechts Buttons
+const nextPly = (k: string) => app.pathTo(k).length + 1;
+const mvHtml = (ply: number, san: string) => `<span class="mv">${moveNum(ply)}${sanHtml(plySide(ply), san)}</span>`;
+const goBtn = (k: string) => `<button class="sm" data-act="go" data-k="${esc(k)}">Hingehen</button>`;
+const addBtn = (k: string, san: string) => `<button class="sm soft" data-act="add" data-k="${esc(k)}" data-san="${esc(san)}">Eintragen</button>`;
+const row = (k: string, gm: string, acts: string) =>
+  `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(k))}</div><div class="gm">${gm}</div></div><div class="ga">${acts}</div></div>`;
+/** Abschnitt mit höchstens 100 Zeilen; leer, wenn es nichts gibt. */
+function section<T>(title: string, items: T[], f: (x: T) => string) {
+  if (!items.length) return '';
+  return `<div class="sec">${title}${items.length > 100 ? ' <span>Top 100</span>' : ''}</div><div class="list">${items.slice(0, 100).map(f).join('')}</div>`;
+}
+/** Zug aus einem der Dialoge ins Repertoire eintragen; `drop` nimmt ihn danach aus der Ergebnisliste. */
+async function addMove(k: string, san: string, drop: () => void) {
+  await api('/api/move-san', { rep: app.rep(), from: k, san });
+  drop(); await app.load(); app.refresh();
 }
 function updateGapKeys() {
   const j = gapJobs[app.rep()];
@@ -35,7 +53,7 @@ const SOURCES: [string, string, string][] = [
   ['player', 'Spieler', 'Partien eines Lichess-Spielers'],
 ];
 // Token-Feld, geteilt von Lücken und Partien; das Eingabefeld wird relativ zum Button gesucht, weil beide Dialoge im DOM sind
-const tokenHtml = (c: GapCfg) => c.tokenSet && !editToken
+const tokenHtml = (c: PublicConfig) => c.tokenSet && !editToken
   ? `<div class="stat"><i></i>Lichess verbunden<button class="link" data-act="chtok">Ändern</button></div>`
   : `<label class="fld"><span class="lb">Lichess-Token</span><span class="inl"><input class="tok" type="password" placeholder="lip_…" autocomplete="off"><button data-act="savetok" class="primary">Speichern</button></span></label>
      <p class="hint"><a href="https://lichess.org/account/oauth/token" target="_blank" rel="noopener">Token erstellen ↗</a></p>`;
@@ -86,22 +104,11 @@ function renderGapRes() {
   else if (j.state === 'error') h = `<div class="sec"></div><div class="note err">${esc(j.message)}</div>`;
   else {
     h = `<div class="sec"></div><div class="kpis">${kpi(j.gaps.length, 'Gegnerzüge fehlen')}${kpi(j.own.length, 'eigene Züge fehlen')}</div>`;
-    const goBtn = (k: string) => `<button class="sm" data-act="go" data-k="${k}">Hingehen</button>`;
-    if (j.gaps.length) {
-      h += `<div class="sec">Gegnerzüge${j.gaps.length > 100 ? ' <span>Top 100</span>' : ''}</div><div class="list">`;
-      for (const g of j.gaps.slice(0, 100)) {
-        const ply = app.pathTo(g.key).length + 1, white = ply % 2 === 1;
-        h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(g.key))}</div><div class="gm"><span class="mv">${Math.ceil(ply / 2)}${white ? '.' : '...'}${sanHtml(white ? 'w' : 'b', g.san)}</span>
-          <span class="sh" title="Anteil an den Partien"><i style="width:${Math.min(100, g.share * 100).toFixed(1)}%"></i></span><span class="gs">${pct(g.share)} · ${de(g.games)} Partien · erreichbar ${pct(g.reach)}</span></div></div>
-          <div class="ga">${goBtn(g.key)}<button class="sm soft" data-act="add" data-k="${g.key}" data-san="${esc(g.san)}">Eintragen</button></div></div>`;
-      }
-      h += '</div>';
-    }
-    if (j.own.length) {
-      h += `<div class="sec">Eigene Züge</div><div class="list">`;
-      for (const o of j.own.slice(0, 100)) h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(o.key))}</div><div class="gm"><span class="gs">erreichbar ${pct(o.reach)}</span></div></div><div class="ga">${goBtn(o.key)}</div></div>`;
-      h += '</div>';
-    }
+    h += section('Gegnerzüge', j.gaps, g => row(g.key,
+      mvHtml(nextPly(g.key), g.san) +
+      `<span class="sh" title="Anteil an den Partien"><i style="width:${Math.min(100, g.share * 100).toFixed(1)}%"></i></span><span class="gs">${pct(g.share)} · ${de(g.games)} Partien · erreichbar ${pct(g.reach)}</span>`,
+      goBtn(g.key) + addBtn(g.key, g.san)));
+    h += section('Eigene Züge', j.own, o => row(o.key, `<span class="gs">erreichbar ${pct(o.reach)}</span>`, goBtn(o.key)));
   }
   $('#gres').innerHTML = h;
 }
@@ -123,9 +130,9 @@ gdlg.addEventListener('click', async e => {
     else if (b?.id === 'gscan') { gapJobs[app.rep()] = await api('/api/gaps/scan', { rep: app.rep() }); updateGapKeys(); renderGapRes(); pollGaps(); }
     else if (act === 'go' && k) { gdlg.close(); app.go(k); }
     else if (act === 'add' && k && b?.dataset.san) {
-      await api('/api/move-san', { rep: app.rep(), from: k, san: b.dataset.san });
-      const j = gapJobs[app.rep()]; if (j) j.gaps = j.gaps.filter(g => !(g.key === k && g.san === b.dataset.san));
-      await app.load(); updateGapKeys(); renderGapRes(); app.refresh();
+      const san = b.dataset.san, j = gapJobs[app.rep()];
+      await addMove(k, san, () => { if (j) j.gaps = j.gaps.filter(g => !(g.key === k && g.san === san)); updateGapKeys(); });
+      renderGapRes();
     }
   } catch (err) { toast((err as Error).message); }
 });
@@ -139,9 +146,6 @@ gdlg.addEventListener('change', async e => {
 });
 
 // ---------- Partien
-interface GameRef { id: string; color: Rep; ply: number; date: number; opponent: string; account: string }
-interface Deviation { kind: 'own' | 'opp'; key: string; san: string; uci: string; book: string[]; count: number; games: GameRef[] }
-interface CheckResult { games: number; clean: number; deviations: Deviation[] }
 const checks: Record<Rep, CheckResult | null> = { white: null, black: null };
 const MAXES = [50, 100, 300];
 let gmMax = 100, gmBusy = false, gmErr = '', gmUsers: string[] = [];
@@ -172,21 +176,16 @@ function renderGmRes() {
     const sum = (k: Deviation['kind']) => r.deviations.reduce((a, d) => a + (d.kind === k ? d.count : 0), 0);
     h += `<div class="sec"></div><div class="kpis k4">${kpi(r.games, 'Partien')}${kpi(r.clean, 'ohne Abweichung')}${kpi(sum('own'), 'du weichst ab')}${kpi(sum('opp'), 'Gegner weicht ab')}</div>`;
     for (const [kind, title] of [['own', 'Deine Abweichungen'], ['opp', 'Gegnerzüge']] as const) {
-      const ds = r.deviations.filter(d => d.kind === kind && app.S().positions[d.key]);
-      if (!ds.length) continue;
-      h += `<div class="sec">${title}${ds.length > 100 ? ' <span>Top 100</span>' : ''}</div><div class="list">`;
-      for (const d of ds.slice(0, 100)) {
-        const ply = app.pathTo(d.key).length + 1, side = ply % 2 ? 'w' : 'b', g = d.games[0];
-        const num = `${Math.ceil(ply / 2)}${side === 'w' ? '.' : '...'}`;
-        const multi = gmUsers.length > 1;
+      const multi = gmUsers.length > 1;
+      h += section(title, r.deviations.filter(d => d.kind === kind && app.S().positions[d.key]), d => {
+        const ply = nextPly(d.key), g = d.games[0];
         const opps = [...new Set(d.games.map(x => multi ? `${x.opponent} (${x.account})` : x.opponent))].join(', ');
-        const book = kind === 'own' && d.book.length ? `<span class="bk">statt ${d.book.map(s => sanHtml(side, s)).join(', ')}</span>` : '';
+        const book = kind === 'own' && d.book.length ? `<span class="bk">statt ${d.book.map(s => sanHtml(plySide(ply), s)).join(', ')}</span>` : '';
         const link = g ? `<a class="btn sm" href="https://lichess.org/${encodeURIComponent(g.id)}/${g.color === 'black' ? 'black' : 'white'}#${Number(g.ply) || 0}" target="_blank" rel="noopener" title="${esc(g.opponent)}">↗</a>` : '';
-        h += `<div class="gap"><div class="gi"><div class="gp">${esc(pathText(d.key))}</div><div class="gm"><span class="mv">${num}${sanHtml(side, d.san)}</span>${book}
-          <span class="gs" title="${esc(opps)}">${de(d.count)}×${g ? ' · ' + day(g.date) + (multi ? ' · ' + esc(g.account) : '') : ''}</span></div></div>
-          <div class="ga"><button class="sm" data-act="go" data-k="${esc(d.key)}">Hingehen</button>${kind === 'opp' ? `<button class="sm soft" data-act="add" data-k="${esc(d.key)}" data-san="${esc(d.san)}">Eintragen</button>` : ''}${link}</div></div>`;
-      }
-      h += '</div>';
+        return row(d.key,
+          mvHtml(ply, d.san) + book + `<span class="gs" title="${esc(opps)}">${de(d.count)}×${g ? ' · ' + day(g.date) + (multi ? ' · ' + esc(g.account) : '') : ''}</span>`,
+          goBtn(d.key) + (kind === 'opp' ? addBtn(d.key, d.san) : '') + link);
+      });
     }
   }
   $('#pres').innerHTML = h;
@@ -207,10 +206,9 @@ pdlg.addEventListener('click', async e => {
     }
     else if (act === 'go' && k) { pdlg.close(); app.go(k); }
     else if (act === 'add' && k && b?.dataset.san) {
-      const san = b.dataset.san;
-      await api('/api/move-san', { rep: app.rep(), from: k, san });
-      const r = checks[app.rep()]; if (r) r.deviations = r.deviations.filter(d => !(d.kind === 'opp' && d.key === k && d.san === san));
-      await app.load(); renderGmRes(); app.refresh();
+      const san = b.dataset.san, r = checks[app.rep()];
+      await addMove(k, san, () => { if (r) r.deviations = r.deviations.filter(d => !(d.kind === 'opp' && d.key === k && d.san === san)); });
+      renderGmRes();
     }
   } catch (err) { toast((err as Error).message); }
 });

@@ -1,7 +1,7 @@
 // Lichess-Namen suchen (wie auf Lichess) und anpinnen, geteilt von Lücken und Partien
 import { api, toast, esc } from './ui';
+import type { LichessUser } from '../games';
 
-export interface LichessUser { name: string; title?: string }
 export interface PinOpts { id: string; ph: string; pinned(): string[]; active?(): string; pin(n: string): Promise<void>; unpin(n: string): Promise<void>; select?(n: string): Promise<void> }
 const xIcon = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>';
 export const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();

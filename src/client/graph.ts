@@ -14,6 +14,13 @@ export interface Layout {
   height: number;
 }
 
+/** Zugnummer zum Halbzug `ply` (ab 1): "3." vor einem Weiß-, "3..." vor einem Schwarzzug. */
+export const moveNum = (ply: number) => `${Math.ceil(ply / 2)}${ply % 2 ? '.' : '...'}`;
+/** Seite, die den Halbzug `ply` spielt. */
+export const plySide = (ply: number): 'w' | 'b' => (ply % 2 ? 'w' : 'b');
+/** Zugfolge ab der Grundstellung mit Nummern vor den Weißzügen: ["1.e4", "e5", "2.Nf3"]. */
+export const numbered = (sans: string[]) => sans.map((s, i) => (i % 2 ? s : `${i / 2 + 1}.${s}`));
+
 /** Baum-Layout über den Spannbaum des Graphen: jede Stellung steht unter dem Vorgänger, über den sie zuerst erreicht wurde. Die Startstellung wird nicht gezeichnet. */
 export function layout(st: State): Layout {
   const depth: Record<string, number> = { [st.root]: 0 };
@@ -26,10 +33,9 @@ export function layout(st: State): Layout {
       if (m.to in depth) continue;
       const d = depth[k] + 1;
       depth[m.to] = d; L.parent[m.to] = k; (kids[k] ??= []).push(m.to);
-      const white = d % 2 === 1;
-      L.num[m.to] = `${Math.ceil(d / 2)}${white ? '.' : '...'}`;
+      L.num[m.to] = moveNum(d);
       L.san[m.to] = m.san;
-      L.side[m.to] = white ? 'w' : 'b';
+      L.side[m.to] = plySide(d);
       next.push(m.to);
     }
     frontier = next;

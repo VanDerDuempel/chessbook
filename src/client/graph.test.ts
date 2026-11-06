@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../db';
 import { START_KEY } from '../core';
-import { layout, renderGraph, keysInRect, NODE_W, NODE_H } from './graph';
+import { layout, renderGraph, keysInRect, moveNum, plySide, numbered, NODE_W, NODE_H } from './graph';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 
 const fresh = () => new Store(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cbg-')), 't.db'));
@@ -87,4 +87,11 @@ test('renderGraph: Schwachstellen mit Klasse weak und Punkt, im Training nicht',
   assert.ok(svg.includes(`<circle class="weakdot" cx="${p.x + NODE_W - 7}" cy="${p.y + NODE_H - 7}" r="4"><title>Schwachstelle</title></circle>`));
   const tr = renderGraph(L, st, e5, 1, undefined, undefined, { shown: new Set([e4, e5]), ok: new Set(), bad: new Set() }, new Set([e5]));
   assert.ok(!tr.includes('weak'));
+});
+
+test('Zugnummern: Halbzug, Seite und nummerierte Zugfolge', () => {
+  assert.equal(moveNum(1), '1.'); assert.equal(moveNum(2), '1...'); assert.equal(moveNum(5), '3.');
+  assert.equal(plySide(1), 'w'); assert.equal(plySide(4), 'b');
+  assert.deepEqual(numbered(['e4', 'e5', 'Nf3']), ['1.e4', 'e5', '2.Nf3']);
+  assert.deepEqual(numbered([]), []);
 });

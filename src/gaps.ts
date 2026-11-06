@@ -1,10 +1,12 @@
 import type { State, Rep } from './db';
-import type { ExplorerData } from './explorer';
+import type { ExplorerData, ExplorerProgress } from './explorer';
 
 export interface GapOptions { minShare: number; minGames: number; minReach: number }
 export interface Gap { key: string; san: string; uci: string; games: number; share: number; reach: number; score: number }
 export interface OwnGap { key: string; reach: number }
 export interface ScanResult { gaps: Gap[]; own: OwnGap[]; queried: number }
+/** Suchlauf, wie ihn /api/gaps/:rep liefert. indexing: Lichess liest den Spieler gerade ein (Warteschlange, bisher gezählte Partien), sonst null */
+export interface GapJob { state: 'none' | 'running' | 'done' | 'error'; queried: number; open: number; message: string; gaps: Gap[]; own: OwnGap[]; source: string; player: string; color: string; indexing: ExplorerProgress | null }
 
 /**
  * Sucht Lücken: Stellungen, in denen der Gegner am Zug ist und häufig gespielte Züge im Repertoire fehlen,

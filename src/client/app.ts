@@ -5,7 +5,7 @@ import type { Key } from 'chessground/types';
 import { chessgroundDests } from 'chessops/compat';
 import { parseSquare } from 'chessops/util';
 import { fromFen, playUci, START_KEY } from '../core';
-import { layout, renderGraph, miniBoard, sanHtml, keysInRect, NODE_W, NODE_H, type Layout } from './graph';
+import { layout, renderGraph, miniBoard, sanHtml, keysInRect, numbered, NODE_W, NODE_H, type Layout } from './graph';
 import { openMoves, markDone, weakKeys, isWeak, type TrainStat } from './train';
 import { findPosition } from './search';
 import { $, attr, api, toast, esc, kpi } from './ui';
@@ -140,7 +140,7 @@ $('#path').addEventListener('wheel', e => {
 }, { passive: false });
 
 function lichessUrl() {
-  const mv = pathTo(cur).map(([, san], i) => encodeURIComponent(i % 2 ? san : `${i / 2 + 1}.${san}`));
+  const mv = numbered(pathTo(cur).map(([, san]) => san)).map(encodeURIComponent);
   const col = rep === 'black' ? '?color=black' : '?color=white';
   return mv.length ? `https://lichess.org/analysis/pgn/${mv.join('_')}${col}` : `https://lichess.org/analysis${col}`;
 }
@@ -297,9 +297,9 @@ CM.onclick = e => {
   if (act === 'del') void askDelete(cmKeys);
   else if (act === 'train') startTrain(cmKeys);
   else if (act === 'rst') void resetStats(cmKeys);
-  else void reorder(cmKeys[0], act as 'main' | 'up' | 'down');
+  else void reorder(cmKeys[0], act as 'up' | 'down');
 };
-async function reorder(k: string, dir: 'main' | 'up' | 'down') {
+async function reorder(k: string, dir: 'up' | 'down') {
   try { await api('/api/reorder', { rep, from: L.parent[k], to: k, dir }); await load(); refresh(); } catch (e) { toast((e as Error).message); }
 }
 document.addEventListener('pointerdown', e => { if (!CM.contains(e.target as Node)) CM.hidden = true; }, true);

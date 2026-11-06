@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import type { Source } from './explorer';
+import { NAME } from './lichess';
 
 export interface Threshold { minShare: number; minGames: number }
 export interface Config { lichessToken: string; source: Source; player: string; playerColor: 'auto' | 'white' | 'black'; thresholds: Record<Source, Threshold>; minReach: number; accounts: string[]; players: string[] }
@@ -9,7 +10,6 @@ export const DEFAULTS: Config = {
   lichessToken: '', source: 'lichess', player: '', playerColor: 'auto', minReach: 0.005, accounts: [], players: [],
   thresholds: { masters: { minShare: 0.05, minGames: 30 }, lichess: { minShare: 0.05, minGames: 30 }, player: { minShare: 0.1, minGames: 5 } },
 };
-const NAME = /^[A-Za-z0-9_-]{2,30}$/;   // Lichess-Benutzername
 const MAX_NAMES = 10;
 // Namen ohne Groß/Klein-Duplikate, höchstens MAX_NAMES
 const uniq = (ns: string[]) => ns.filter((n, i) => ns.findIndex(m => m.toLowerCase() === n.toLowerCase()) === i);
@@ -37,6 +37,9 @@ export function loadConfig(file: string): Config {
   return c;
 }
 export const saveConfig = (file: string, c: Config) => fs.writeFileSync(file, JSON.stringify(c, null, 2));
+/** Was der Client sieht: alles außer dem Token, nur ob einer gesetzt ist. */
+export const publicConfig = (c: Config) => ({ tokenSet: !!c.lichessToken, source: c.source, player: c.player, players: c.players, playerColor: c.playerColor, thresholds: c.thresholds, accounts: c.accounts });
+export type PublicConfig = ReturnType<typeof publicConfig>;
 
 const pick = <T extends string>(v: unknown, allowed: readonly T[], what: string): T => {
   if (!allowed.includes(v as T)) throw new Error(`Ungültige Angabe: ${what}`);

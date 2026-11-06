@@ -1,3 +1,5 @@
+import { lichessHeaders } from './lichess';
+
 export type Source = 'masters' | 'lichess' | 'player';
 export interface ExplorerSettings { source: Source; player?: string; color?: 'white' | 'black' }
 export interface ExplorerMove { san: string; uci: string; games: number }
@@ -71,7 +73,7 @@ export class ExplorerClient {
       this.last = Date.now();
       let res: Response;
       try {
-        res = await (o.fetchFn ?? fetch)(url, { headers: { accept: 'application/json', 'user-agent': 'chessbook-lokal', ...(o.token ? { authorization: `Bearer ${o.token}` } : {}) } });
+        res = await (o.fetchFn ?? fetch)(url, { headers: lichessHeaders('application/json', o.token) });
       } catch (e) { await netFail(e); continue; }
       if (res.status === 401 || res.status === 403)
         throw new ExplorerError(o.token ? 'UNAUTHORIZED' : 'NO_TOKEN', o.token ? 'Lichess hat den Zugangsschlüssel abgelehnt. Bitte einen neuen eintragen.' : 'Lichess verlangt einen Zugangsschlüssel (Token) für die Eröffnungsdaten.');

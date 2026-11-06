@@ -40,7 +40,7 @@ Im Dialog **Daten**: Export als JSON (beide Repertoires samt Pfeilen und Kreisen
 
 ## Entwicklung
 - `npm test` Tests, `npm run typecheck` Typprüfung, `npm run build` baut `public/app.js` neu (nach Änderungen unter `src/client`).
-- `src/core.ts` Schachlogik und Stellungsschlüssel, `src/db.ts` Datenbank, Import und Export, `src/server.ts` lokale Schnittstelle, `src/gaps.ts`/`src/explorer.ts`/`src/config.ts` Lücken-Erkennung, `src/games.ts` Abgleich mit eigenen Partien, `src/client/` Oberfläche.
+- `src/core.ts` Schachlogik und Stellungsschlüssel, `src/db.ts` Datenbank, Import und Export, `src/server.ts` lokale Schnittstelle, `src/gaps.ts`/`src/explorer.ts`/`src/config.ts` Lücken-Erkennung, `src/games.ts` Abgleich mit eigenen Partien, `src/lichess.ts` gemeinsame Lichess-Anfragen, `src/client/` Oberfläche.
 - `public/app.js` und `public/css/` werden erzeugt und liegen nicht im Repo.
 
 ## Bausteine

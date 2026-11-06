@@ -1,6 +1,7 @@
 import type { Chess } from 'chessops/chess';
 import { startPos, START_KEY, playSan } from './core';
 import type { State, Rep } from './db';
+import { LICHESS_URL, NAME, lichessGet } from './lichess';
 
 export interface LichessGame { id: string; white: string; black: string; moves: string[]; date: number }
 export interface GameRef { id: string; color: 'white' | 'black'; ply: number; date: number; opponent: string; account: string }
@@ -68,20 +69,8 @@ function walk(st: State, moves: string[]): Walk {
 /** Lädt die eigenen Partien von Lichess: aus `accounts` (je `max`) oder, wenn leer, vom Account hinter dem Token. */
 export async function fetchGames(o: { token: string; accounts?: string[]; max: number; baseUrl?: string; fetchFn?: typeof fetch }): Promise<{ users: string[]; games: LichessGame[] }> {
   if (!o.token && !o.accounts?.length) throw new Error('Bitte einen Lichess-Account oder Token eintragen.');
-  const base = (o.baseUrl ?? 'https://lichess.org').replace(/\/$/, '');
-  const f = o.fetchFn ?? fetch;
-  const get = async (url: string, accept: string, who?: string) => {
-    const headers: Record<string, string> = { accept, 'user-agent': 'chessbook-lokal' };
-    if (o.token) headers.authorization = `Bearer ${o.token}`;   // öffentliche Partien brauchen keinen Token
-    let res: Response;
-    try { res = await f(url, { headers }); }
-    catch { throw new Error('Lichess ist nicht erreichbar. Bitte die Internetverbindung prüfen.'); }
-    if (res.status === 401 || res.status === 403) throw new Error('Lichess hat den Token abgelehnt.');
-    if (res.status === 404 && who) throw new Error(`Lichess kennt den Account ${who} nicht.`);
-    if (res.status === 429) throw new Error('Lichess bremst gerade die Anfragen. Bitte später erneut versuchen.');
-    if (!res.ok) throw new Error(`Lichess antwortet mit Status ${res.status}.`);
-    try { return await res.text(); } catch { throw new Error('Verbindung zu Lichess abgebrochen.'); }
-  };
+  const base = (o.baseUrl ?? LICHESS_URL).replace(/\/$/, '');
+  const get = (url: string, accept: string, who?: string) => lichessGet(url, { accept, token: o.token, fetchFn: o.fetchFn, who });
   let users = o.accounts?.length ? [...o.accounts] : [];
   if (!users.length) {
     let user = '';
@@ -108,17 +97,11 @@ export interface LichessUser { name: string; title?: string }
 /** Namenssuche wie im Lichess-Suchfeld, höchstens 10 Treffer. Ungültige Eingaben ergeben ohne Anfrage eine leere Liste. */
 export async function searchUsers(o: { term: string; token?: string; baseUrl?: string; fetchFn?: typeof fetch }): Promise<LichessUser[]> {
   const term = String(o.term ?? '').trim();
-  if (!/^[A-Za-z0-9_-]{2,30}$/.test(term)) return [];
-  const base = (o.baseUrl ?? 'https://lichess.org').replace(/\/$/, '');
-  const headers: Record<string, string> = { accept: 'application/json', 'user-agent': 'chessbook-lokal' };
-  if (o.token) headers.authorization = `Bearer ${o.token}`;
-  let res: Response;
-  try { res = await (o.fetchFn ?? fetch)(`${base}/api/player/autocomplete?term=${encodeURIComponent(term)}&object=true`, { headers }); }
-  catch { throw new Error('Lichess ist nicht erreichbar. Bitte die Internetverbindung prüfen.'); }
-  if (res.status === 429) throw new Error('Lichess bremst gerade die Anfragen. Bitte später erneut versuchen.');
-  if (!res.ok) throw new Error(`Lichess antwortet mit Status ${res.status}.`);
+  if (!NAME.test(term)) return [];
+  const base = (o.baseUrl ?? LICHESS_URL).replace(/\/$/, '');
+  const text = await lichessGet(`${base}/api/player/autocomplete?term=${encodeURIComponent(term)}&object=true`, { accept: 'application/json', token: o.token, fetchFn: o.fetchFn });
   let j: any;
-  try { j = await res.json(); } catch { throw new Error('Lichess liefert eine ungültige Antwort.'); }
+  try { j = JSON.parse(text); } catch { throw new Error('Lichess liefert eine ungültige Antwort.'); }
   const list: any[] = Array.isArray(j?.result) ? j.result : [];
   return list.filter(u => typeof u?.name === 'string').slice(0, 10)
     .map(u => (typeof u.title === 'string' && u.title ? { name: u.name, title: u.title } : { name: u.name }));
