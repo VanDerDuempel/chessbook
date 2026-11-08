@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chessbook lokal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/chessground.base.css"><link rel="stylesheet" href="css/chessground.brown.css"><link rel="stylesheet" href="css/chessground.cburnett.css">
+<link rel="stylesheet" href="app.css">
+</head><body><div class="wrap">
+<header>
+  <div class="seg"><button id="tw" class="on"><i class="w"></i>Weiß</button><button id="tb"><i class="b"></i>Schwarz</button></div>
+  <label id="qs" title="Züge, PGN oder FEN (/)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg><input id="q" type="search" spellcheck="false" autocomplete="off" placeholder="Züge, PGN oder FEN"></label>
+  <button id="th" title="Zwischen hellem und dunklem Modus wechseln" aria-label="Hell/Dunkel wechseln"></button>
+</header>
+<div class="top">
+  <section class="card">
+    <div id="bw"><div id="board"></div><div id="promo" hidden></div></div>
+    <div class="nav">
+      <button id="n0" title="Zum Start"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><rect x="5" y="6" width="2.4" height="12"/><path d="M19 6v12l-9-6z"/></svg></button>
+      <button id="n1" title="Ein Zug zurück"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button id="n2" title="Ein Zug vor"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button id="n3" title="Zum Ende der Variante"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M5 6v12l9-6z"/><rect x="16.6" y="6" width="2.4" height="12"/></svg></button>
+    </div>
+    <div id="path"></div>
+    <div class="bar">
+      <a id="lic" class="btn" target="_blank" rel="noopener" title="Stellung auf Lichess analysieren"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Analysieren</a>
+      <button id="dat" title="Export und Import"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7" ry="2.5"/><path d="M5 5.5v13c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-13M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/></svg>Daten</button>
+      <button id="gap" title="Lücken im Repertoire finden"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>Lücken</button>
+      <button id="gms" title="Repertoire mit deinen Lichess-Partien abgleichen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16M12 4v16"/></svg>Partien</button>
+      <button id="trn" title="Repertoire abfragen (T)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg>Training</button>
+      <button id="weak" title="Schwachstellen trainieren (W)" hidden><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5"/><circle cx="12" cy="16" r="0.8" fill="currentColor"/></svg><span id="weakn"></span></button>
+      <button id="fl" title="Brett umdrehen (F)" aria-label="Brett umdrehen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg></button>
+      <span id="info"></span>
+    </div>
+  </section>
+  <div id="split" title="Ziehen: Brettgröße · Doppelklick: zurücksetzen"></div>
+  <section><div id="pend"></div><div id="gwrap"><div id="graph"></div><div class="zbar"><button id="zo" title="Verkleinern"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg></button><button id="zi" title="Vergrößern"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button><button id="zf" title="Alles zeigen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><button id="zc" title="Zur aktuellen Stellung"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/></svg></button></div></div></section>
+</div>
+</div>
+<dialog id="dlg" class="dlg" autofocus>
+  <div class="dh"><h2>Daten</h2><button id="dclose" class="x" title="Schließen" aria-label="Schließen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="db">
+    <div class="sec">Export</div>
+    <div class="tiles">
+      <button id="xjson" class="tile"><b>JSON</b><span>Weiß + Schwarz</span></button>
+      <button id="xw" class="tile"><b>PGN</b><span>Weiß</span></button>
+      <button id="xb" class="tile"><b>PGN</b><span>Schwarz</span></button>
+    </div>
+    <div class="sec">Import</div>
+    <div class="drop" id="drop">
+      <textarea id="txt" spellcheck="false" placeholder="PGN oder JSON einfügen oder Datei ablegen"></textarea>
+      <div class="dbar"><button id="fpick" class="sm">Datei …</button><span id="fname" class="mut"></span><span id="ifmt" class="chip" hidden></span></div>
+      <input type="file" id="file" accept=".json,.pgn,.txt" hidden>
+    </div>
+    <div class="fld tgt"><span class="lb">Ziel</span><div class="seg" id="itgt"></div></div>
+    <div id="dm"></div>
+  </div>
+  <div class="df"><button id="imp" class="primary">Importieren</button></div>
+</dialog>
+<dialog id="gdlg" class="dlg" autofocus>
+  <div class="dh"><div id="ghead"></div><button id="gclose" class="x" title="Schließen" aria-label="Schließen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="db"><div id="gcfg"></div><div id="gres"></div></div>
+  <div class="df"><button id="gscan" class="primary">Suchen</button></div>
+</dialog>
+<dialog id="pdlg" class="dlg" autofocus>
+  <div class="dh"><div id="phead"></div><button id="pclose" class="x" title="Schließen" aria-label="Schließen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="db"><div id="pcfg"></div><div id="pres"></div></div>
+  <div class="df"><button id="pchk" class="primary">Abgleichen</button></div>
+</dialog>
+<div id="toast" hidden></div>
+<script type="module" src="app.js"></script>
+</body></html>

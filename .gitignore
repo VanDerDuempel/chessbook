@@ -1,0 +1,8 @@
+node_modules/
+
+# Wird bei "npm start" bzw. "npm run build" erzeugt
+public/app.js
+public/css/
+
+# Lokale Daten (Datenbank, Config, Backups) – nie ins Repo, nie überschreiben
+data/
